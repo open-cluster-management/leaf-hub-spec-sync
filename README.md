@@ -17,7 +17,7 @@ Red Hat Advanced Cluster Management Leaf Hub Spec Sync
     
 edge-sync-service ESS k8s objects will be created under the namespace `sync-service`.
     
-#### Cleanup of ESS from a leaf hub
+## Cleanup from a leaf hub
     
 1.  Run the following command to clean leaf-hub-spec-sync from your leaf hub cluster:  
     ```
