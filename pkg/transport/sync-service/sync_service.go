@@ -33,10 +33,6 @@ func NewSyncService(policiesUpdateChan chan *dataTypes.PoliciesBundle) *SyncServ
 	serverProtocol, host, port, pollingInterval := readEnvVars()
 	syncServiceClient := client.NewSyncServiceClient(serverProtocol, host, port)
 	syncServiceClient.SetAppKeyAndSecret("user@myorg", "")
-	err := syncServiceClient.SetCACertificate("./persist/sync/certs/cert.pem")
-	if err != nil {
-		log.Fatalf("failed to set CA certificate for ESS communication - %s", err)
-	}
 	syncService := &SyncService{
 		client:                	syncServiceClient,
 		pollingInterval:		pollingInterval,

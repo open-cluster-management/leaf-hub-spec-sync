@@ -8,6 +8,7 @@ import (
 	dataTypes "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/data-types"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
 	"log"
+	"strings"
 	"sync"
 
 	"k8s.io/client-go/kubernetes"
@@ -16,6 +17,8 @@ import (
 
 const (
 	namespace = "hoh-system"
+	notFoundError = "the server could not find the requested resource"
+	objectAlreadyExistErrorSuffix = "already exists"
 )
 
 type LeafHubSpecSync struct {
@@ -63,13 +66,23 @@ func (s *LeafHubSpecSync) syncPolicies() {
 			return
 		case policiesBundle := <-s.policiesUpdateChan:
 			for _, policy := range policiesBundle.Policies {
-				policy.Name = fmt.Sprintf("%s.%s",policy.Name, policy.Namespace)
-				policy.Namespace = namespace
+				policy.SetName(fmt.Sprintf("%s.%s",policy.Name, policy.Namespace))
+				policy.SetNamespace(namespace)
 				s.updatePolicy(policy)
+				//log.Println("creating policy -", policy.Name)
+				//body, _ := json.Marshal(policy)
+				//data, err := s.k8sRestClient.
+				//	Post().
+				//	AbsPath(fmt.Sprintf("/apis/%s/namespaces/%s/policies",policy.APIVersion, namespace)).
+				//	Body(body).
+				//	DoRaw(context.TODO())
+				//if err != nil {
+				//	log.Printf("failed to update policy - %s - %s", err, data)
+				//}
 			}
 			for _, policy := range policiesBundle.DeletedPolicies {
-				policy.Name = fmt.Sprintf("%s.%s",policy.Name, policy.Namespace)
-				policy.Namespace = namespace
+				policy.SetName(fmt.Sprintf("%s.%s",policy.Name, policy.Namespace))
+				policy.SetNamespace(namespace)
 				s.deletePolicy(policy)
 			}
 		}
@@ -77,35 +90,65 @@ func (s *LeafHubSpecSync) syncPolicies() {
 }
 
 func (s *LeafHubSpecSync) updatePolicy(policy *v1.Policy) {
-	log.Println("updating policy:", policy.Name)
 	body, _ := json.Marshal(policy)
-	data,err := s.k8sRestClient.
-		Get().
-		AbsPath(fmt.Sprintf("/apis/%s/namespaces/%s/policies/%s",policy.APIVersion, namespace,policy.Name)).
-		DoRaw(context.TODO())
-	var request *rest.Request
-	if err != nil { // object doesn't exist, need to create using POST
-		request = s.k8sRestClient.Post()
-	} else { // object exist, need to update using PUT
-		request = s.k8sRestClient.Put()
-	}
-	data, err = request.
-		AbsPath(fmt.Sprintf("/apis/%s/namespaces/%s/policies",policy.APIVersion, namespace)).
+	result := s.k8sRestClient.
+		Post().
+		AbsPath(fmt.Sprintf("/apis/%s/namespaces/%s/policies", policy.APIVersion, namespace)).
 		Body(body).
-		DoRaw(context.TODO())
-	if err != nil {
-		log.Printf("failed to update policy - %s - %s", err, data)
+		Do(context.TODO())
+	if result.Error() != nil {
+		errStr := fmt.Sprint(result.Error())
+		if strings.HasSuffix(errStr, objectAlreadyExistErrorSuffix) {
+			data, err := s.k8sRestClient.
+				Put().
+				AbsPath(fmt.Sprintf("/apis/%s/namespaces/%s/policies/%s", policy.APIVersion, namespace, policy.Name)).
+				Body(body).
+				DoRaw(context.TODO())
+			if err != nil {
+				log.Printf("failed to update policy - %s - %s", err, data)
+			} else {
+				log.Println("updated policy -", policy.Name)
+			}
+		}
+	} else {
+		log.Println("created policy -", policy.Name)
 	}
 }
 
+
+	//body, _ := json.Marshal(policy)
+	//data,err := s.k8sRestClient.
+	//	Get().
+	//	AbsPath(fmt.Sprintf("/apis/%s/namespaces/%s/policies/%s",policy.APIVersion, namespace,policy.Name)).
+	//	DoRaw(context.TODO())
+	//if err != nil { // object doesn't exist, need to create using POST
+	//	log.Println("creating policy:", policy.Name)
+	//	data, err = s.k8sRestClient.Post().
+	//		AbsPath(fmt.Sprintf("/apis/%s/namespaces/%s/policies",policy.APIVersion, namespace)).
+	//		Body(body).
+	//		DoRaw(context.TODO())
+	//} else { // object exist, need to update using PUT
+	//	log.Println("updating policy:", policy.Name)
+	//	data, err = s.k8sRestClient.Put().
+	//		AbsPath(fmt.Sprintf("/apis/%s/namespaces/%s/policies",policy.APIVersion, namespace)).
+	//		Body(body).
+	//		DoRaw(context.TODO())
+	//}
+	//if err != nil {
+	//	log.Printf("failed to update policy - %s - %s", err, data)
+	//}
+//}
+
 func (s *LeafHubSpecSync) deletePolicy(policy *v1.Policy) {
-	log.Println("deleting policy:", policy.Name)
 	data, err := s.k8sRestClient.
 		Delete().
-		AbsPath(fmt.Sprintf("/apis/%s/namespaces/%s/policies",policy.APIVersion, namespace)).
+		AbsPath(fmt.Sprintf("/apis/%s/namespaces/%s/policies/%s",policy.APIVersion, namespace, policy.Name)).
 		DoRaw(context.TODO())
-	log.Println("deleted policy", policy.Name, "successfully.")
 	if err != nil {
-		log.Printf("failed to delete policy - %s - %s", err, data)
+		if err.Error() != notFoundError {
+			log.Printf("failed to delete policy - %s - %s", err, data)
+		}
+	} else {
+		log.Println("deleted policy:", policy.Name)
 	}
 }
