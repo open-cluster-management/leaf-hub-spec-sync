@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hoh-system
+  labels:
+    name: hoh-system
+---
+
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leaf-hub-spec-sync
+  namespace: hoh-system
+subjects:
+- kind: ServiceAccount
+  name: leaf-hub-spec-sync
+roleRef:
+  kind: Role
+  name: leaf-hub-spec-sync
+  apiGroup: rbac.authorization.k8s.io
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leaf-hub-spec-sync
+  namespace: hoh-system
+rules:
+- apiGroups:
+  - "policy.open-cluster-management.io"
+  resources:
+  - '*'
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+  - deletecollection
+- apiGroups:
+  - ""
+  resources:
+  - events
+  - namespaces
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: leaf-hub-spec-sync
+  namespace: hoh-system
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lh-spec-sync
+  namespace: hoh-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: lh-spec-sync
+  template:
+    metadata:
+      labels:
+        name: lh-spec-sync
+    spec:
+      serviceAccountName: leaf-hub-spec-sync
+      containers:
+        - name: lh-spec-sync
+          image: nirrozenbaumibm/leaf-hub-spec-sync:latest
+          imagePullPolicy: Always
+          env:
+            - name: SYNC_SERVICE_PROTOCOL
+              value: "http"
+            - name: SYNC_SERVICE_HOST
+              value: sync-service-ess.sync-service.svc.cluster.local
+            - name: SYNC_SERVICE_PORT
+              value: "$SYNC_SERVICE_PORT"
+            - name: SYNC_SERVICE_POLLING_INTERVAL
+              value: "10"
