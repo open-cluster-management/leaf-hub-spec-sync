@@ -671,6 +671,13 @@ github.com/onsi/gomega v1.10.1/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1y
 github.com/open-cluster-management/api v0.0.0-20200610161514-939cead3902c/go.mod h1:+vUECYB7WkfCb52r0J7rxgD1mseSGAqGi8rTLLRcbgw=
 github.com/open-cluster-management/governance-policy-propagator v0.0.0-20210520203318-a78632de1e26 h1:EXnaCT1VMzyBenLpxBJ4gGQblX3LTlgq+P9Vi1S/OKw=
 github.com/open-cluster-management/governance-policy-propagator v0.0.0-20210520203318-a78632de1e26/go.mod h1:7gzDyC7PddcuInXS+kLrfYmto/ImSORibXwy8RGjNM8=
+github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210603084411-4fda9c626964 h1:b4MjRvJbeNTC3J/5LCKqPamjrXlX/rk6g8B9amnY5GU=
+github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210603084411-4fda9c626964/go.mod h1:cShrBqccdSjQWBd0L9n+Gd2aNYSwRVIgPOgztWA/abQ=
+github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210603124111-d4ffcd248ff7/go.mod h1:cShrBqccdSjQWBd0L9n+Gd2aNYSwRVIgPOgztWA/abQ=
+github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210603124651-447ff4f6a271 h1:QXplIhMe+q+YoY1sd6nrCAe1nwl8Pj7c8F/wGItNRo4=
+github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210603124651-447ff4f6a271/go.mod h1:cShrBqccdSjQWBd0L9n+Gd2aNYSwRVIgPOgztWA/abQ=
+github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210604065451-a13560dc2c3e h1:KrHfp1zPyaivFdUeWMMgH+VgYhvaHdR2XJPmCh0HgQQ=
+github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210604065451-a13560dc2c3e/go.mod h1:cShrBqccdSjQWBd0L9n+Gd2aNYSwRVIgPOgztWA/abQ=
 github.com/open-horizon/edge-sync-service-client v0.0.0-20190711093406-dc3a19905da2 h1:ZmX/tuCgFVbe07pqObNWf14cAYpHN8gVRSkWnbtSUW4=
 github.com/open-horizon/edge-sync-service-client v0.0.0-20190711093406-dc3a19905da2/go.mod h1:rKW01VtqwtwaUQ+zkJ80X5EeGqsTblQE4J9HxPUtTAQ=
 github.com/open-horizon/edge-utilities v0.0.0-20190711093331-0908b45a7152 h1:YEvNOMo3ANOQ3AwsU0cCcBA4nKHDLUlyUCRWk5rBf68=

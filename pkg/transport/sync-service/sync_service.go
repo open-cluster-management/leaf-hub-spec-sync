@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	dataTypes "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/data-types"
+	dataTypes "github.com/open-cluster-management/hub-of-hubs-data-types"
 	"github.com/open-horizon/edge-sync-service-client/client"
 	"log"
 	"os"
@@ -20,29 +20,27 @@ const (
 )
 
 type SyncService struct {
-	client                	*client.SyncServiceClient
-	pollingInterval			int
-	policiesMeataDataChan 	chan *client.ObjectMetaData
-	policiesUpdateChan 	 	chan *dataTypes.PoliciesBundle
-	stopChan              	chan struct{}
-	startOnce             	sync.Once
-	stopOnce              	sync.Once
+	client              *client.SyncServiceClient
+	pollingInterval     int
+	objectsMetaDataChan chan *client.ObjectMetaData
+	updatesChan         chan *dataTypes.ObjectsBundle
+	stopChan            chan struct{}
+	startOnce           sync.Once
+	stopOnce            sync.Once
 }
 
-func NewSyncService(policiesUpdateChan chan *dataTypes.PoliciesBundle) *SyncService {
+func NewSyncService(updatesChan chan *dataTypes.ObjectsBundle) *SyncService {
 	serverProtocol, host, port, pollingInterval := readEnvVars()
 	syncServiceClient := client.NewSyncServiceClient(serverProtocol, host, port)
 	syncServiceClient.SetAppKeyAndSecret("user@myorg", "")
-	syncService := &SyncService{
-		client:                	syncServiceClient,
-		pollingInterval:		pollingInterval,
-		policiesMeataDataChan: 	make(chan *client.ObjectMetaData),
-		policiesUpdateChan: 	policiesUpdateChan,
-		stopChan:              	make(chan struct{}, 1),
+	return &SyncService {
+		client:              syncServiceClient,
+		pollingInterval:     pollingInterval,
+		objectsMetaDataChan: make(chan *client.ObjectMetaData),
+		updatesChan:         updatesChan,
+		stopChan:            make(chan struct{}, 1),
 	}
-	return syncService
 }
-
 
 func readEnvVars() (string, string, uint16, int) {
 	protocol := os.Getenv(syncServiceProtocol)
@@ -74,41 +72,40 @@ func readEnvVars() (string, string, uint16, int) {
 
 func (s *SyncService) Start() {
 	s.startOnce.Do(func() {
-		go s.handlePoliciesBundle()
+		go s.handleBundles()
 	})
 }
 
 func (s *SyncService) Stop() {
 	close(s.stopChan)
-	close(s.policiesMeataDataChan)
-	close(s.policiesUpdateChan)
+	close(s.objectsMetaDataChan)
 }
 
-func (s *SyncService) handlePoliciesBundle() {
-	s.client.StartPollingForUpdates(dataTypes.PolicyMessageType, s.pollingInterval, s.policiesMeataDataChan)
+func (s *SyncService) handleBundles() {
+	// register for updates for spec bundle type, this include all types of objects each with different id.
+	s.client.StartPollingForUpdates(dataTypes.SpecBundle, s.pollingInterval, s.objectsMetaDataChan)
 	for {
 		select {
 		case <-s.stopChan:
 			return
-		case objectMetaData := <-s.policiesMeataDataChan:
+		case objectMetaData := <-s.objectsMetaDataChan:
 			var buffer bytes.Buffer
 			if !s.client.FetchObjectData(objectMetaData, &buffer) {
-				log.Println(fmt.Sprintf("failed to read policy bundle object with id %s from sync service",
+				log.Println(fmt.Sprintf("failed to read bundle object with id %s from sync service",
 					objectMetaData.ObjectID))
 				continue
 			}
-
-			policiesBundle := &dataTypes.PoliciesBundle{}
-			err := json.Unmarshal(buffer.Bytes(), policiesBundle)
+			bundle := &dataTypes.ObjectsBundle{}
+			err := json.Unmarshal(buffer.Bytes(), bundle)
 			if err != nil {
-				log.Println(fmt.Sprintf("failed to parse policy bundle object with id %s from sync service",
+				log.Println(fmt.Sprintf("failed to parse bundle object with id %s from sync service",
 					objectMetaData.ObjectID))
 				continue
 			}
-			s.policiesUpdateChan <- policiesBundle
+			s.updatesChan <- bundle
 			err = s.client.MarkObjectReceived(objectMetaData)
 			if err != nil {
-				log.Println("failed to report object consumed to sync service")
+				log.Println("failed to report object received to sync service")
 			}
 		}
 	}
