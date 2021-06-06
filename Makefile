@@ -31,8 +31,8 @@ docker-build: all
 
 .PHONY: docker-push			##pushes the local docker image to 'docker.io' docker registry
 docker-push: docker-build
-	@docker tag leaf-hub-spec-sync docker.io/nirrozenbaumibm/leaf-hub-spec-sync
-	@docker push docker.io/nirrozenbaumibm/leaf-hub-spec-sync
+	@docker tag leaf-hub-spec-sync ${IMAGE}
+	@docker push ${IMAGE}
 
 .PHONY: clean			##cleans the build area (all executables under build/bin)
 clean:

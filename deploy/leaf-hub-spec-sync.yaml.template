@@ -80,7 +80,7 @@ spec:
       serviceAccountName: leaf-hub-spec-sync
       containers:
         - name: lh-spec-sync
-          image: nirrozenbaumibm/leaf-hub-spec-sync:latest
+          image: $IMAGE
           imagePullPolicy: Always
           env:
             - name: SYNC_SERVICE_PROTOCOL
