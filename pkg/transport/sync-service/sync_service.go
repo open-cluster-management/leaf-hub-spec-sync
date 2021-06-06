@@ -57,7 +57,7 @@ func readEnvVars() (string, string, uint16, int) {
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		log.Fatalf("the expected env var %s is not from type uint", syncServicePort)
+		log.Fatalf("the expected env var %s is not from type int", syncServicePort)
 	}
 	pollingIntervalStr := os.Getenv(syncServicePollingInterval)
 	if pollingIntervalStr == "" {
@@ -82,7 +82,7 @@ func (s *SyncService) Stop() {
 }
 
 func (s *SyncService) handleBundles() {
-	// register for updates for spec bundle type, this include all types of objects each with different id.
+	// register for updates for spec bundles, this include all types of spec bundles each with a different id.
 	s.client.StartPollingForUpdates(dataTypes.SpecBundle, s.pollingInterval, s.objectsMetaDataChan)
 	for {
 		select {
