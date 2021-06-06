@@ -28,6 +28,7 @@ metadata:
 rules:
 - apiGroups:
   - "policy.open-cluster-management.io"
+  - "apps.open-cluster-management.io"
   resources:
   - '*'
   verbs:
