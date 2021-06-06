@@ -26,7 +26,6 @@ import (
 )
 
 const (
-	hohSystemNamespace = "hoh-system"
 	controllerName = "leaf-hub-spec-sync"
 	notFoundSuffixError = "not found"
 )
@@ -116,7 +115,7 @@ func (s *LeafHubSpecSync) applyObject(object interface{}) (string, string, error
 			Force: &s.forceChanges,
 		})
 	if err != nil {
-		return "", "", errors.New(fmt.Sprintf("failed to apply the object - %s - %s",err, data))
+		return "", "", errors.New(fmt.Sprintf("failed to apply object - %s - %s",err, data))
 	}
 	return unstructuredObj.GetName(), unstructuredObj.GetKind(), nil
 }
@@ -132,7 +131,7 @@ func (s *LeafHubSpecSync) deleteObject(object interface{}) (string, string, bool
 		if strings.HasSuffix(err.Error(), notFoundSuffixError) { //trying to delete object which doesn't exist
 			return unstructuredObj.GetName(), unstructuredObj.GetKind(), false, nil
 		} else {
-			return "", "", false, errors.New(fmt.Sprintf("failed to delete policy - %s - %s", err, data))
+			return "", "", false, errors.New(fmt.Sprintf("failed to delete object - %s - %s", err, data))
 		}
 	}
 	return unstructuredObj.GetName(), unstructuredObj.GetKind(), true, nil
@@ -149,11 +148,6 @@ func (s *LeafHubSpecSync) processObject(object interface{}) (dynamic.ResourceInt
 	if err != nil {
 		return nil, nil, nil, errors.New(fmt.Sprintf("failed to decode object bytes to unstructured - %s", err))
 	}
-	// manipulate name and namespace to avoid collisions of resources with same name on different ns
-	unstructuredObj.SetName(fmt.Sprintf("%s.%s", unstructuredObj.GetName(), unstructuredObj.GetNamespace()))
-	unstructuredObj.SetNamespace(hohSystemNamespace)
-	// manipulate uid, otherwise leaf hub complains that this id doesn't exist
-	unstructuredObj.SetUID("")
 
 	// get GVR (group, version, resource) out of GVK
 	mapping, err := s.k8sRestMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
@@ -164,7 +158,7 @@ func (s *LeafHubSpecSync) processObject(object interface{}) (dynamic.ResourceInt
 	var resourceInterface dynamic.ResourceInterface
 	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
 		// namespaced resources should specify the namespace
-		resourceInterface = s.k8sDynamicClient.Resource(mapping.Resource).Namespace(hohSystemNamespace)
+		resourceInterface = s.k8sDynamicClient.Resource(mapping.Resource).Namespace(unstructuredObj.GetNamespace())
 	} else {
 		// for cluster-wide resources
 		resourceInterface = s.k8sDynamicClient.Resource(mapping.Resource)
