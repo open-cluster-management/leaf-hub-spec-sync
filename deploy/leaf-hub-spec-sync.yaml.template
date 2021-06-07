@@ -62,6 +62,35 @@ metadata:
   namespace: hoh-system
 ---
 
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leaf-hub-spec-sync
+rules:
+- apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - managedclusters
+  verbs:
+  - get
+  - list
+  - watch
+---
+
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leaf-hub-spec-sync
+subjects:
+- kind: ServiceAccount
+  name: leaf-hub-spec-sync
+  namespace: hoh-system
+roleRef:
+  kind: ClusterRole
+  name: leaf-hub-spec-sync
+  apiGroup: rbac.authorization.k8s.io
+---
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
