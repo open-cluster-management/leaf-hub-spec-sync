@@ -119,4 +119,4 @@ spec:
             - name: SYNC_SERVICE_PORT
               value: "$SYNC_SERVICE_PORT"
             - name: SYNC_SERVICE_POLLING_INTERVAL
-              value: "10"
+              value: "5"
