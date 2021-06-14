@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	controllerName = "leaf-hub-spec-sync"
+	controllerName      = "leaf-hub-spec-sync"
 	notFoundSuffixError = "not found"
 )
 
@@ -52,7 +52,7 @@ func NewLeafHubSpecSync(transport transport.Transport, updatesChan chan *dataTyp
 	discoveryClient := discovery.NewDiscoveryClientForConfigOrDie(config)
 	k8sMapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(discoveryClient))
 
-	return &LeafHubSpecSync {
+	return &LeafHubSpecSync{
 		k8sDynamicClient:    dynamicClient,
 		k8sRestMapper:       k8sMapper,
 		transport:           transport,
@@ -110,12 +110,12 @@ func (s *LeafHubSpecSync) applyObject(object interface{}) (string, string, error
 	// Create or Update the object with SSA. types.ApplyPatchType indicates SSA. (Server Side Apply)
 	// FieldManager specifies the field owner ID.
 	_, err = resourceInterface.Patch(context.TODO(), unstructuredObj.GetName(), types.ApplyPatchType, data,
-		metav1.PatchOptions {
+		metav1.PatchOptions{
 			FieldManager: controllerName,
-			Force: &s.forceChanges,
+			Force:        &s.forceChanges,
 		})
 	if err != nil {
-		return "", "", errors.New(fmt.Sprintf("failed to apply object - %s - %s",err, data))
+		return "", "", errors.New(fmt.Sprintf("failed to apply object - %s - %s", err, data))
 	}
 	return unstructuredObj.GetName(), unstructuredObj.GetKind(), nil
 }
@@ -126,7 +126,7 @@ func (s *LeafHubSpecSync) deleteObject(object interface{}) (string, string, bool
 		return "", "", false, err
 	}
 	// Delete the object
-	err = resourceInterface.Delete(context.TODO(), unstructuredObj.GetName(), metav1.DeleteOptions {})
+	err = resourceInterface.Delete(context.TODO(), unstructuredObj.GetName(), metav1.DeleteOptions{})
 	if err != nil {
 		if strings.HasSuffix(err.Error(), notFoundSuffixError) { //trying to delete object which doesn't exist
 			return unstructuredObj.GetName(), unstructuredObj.GetKind(), false, nil
@@ -152,7 +152,7 @@ func (s *LeafHubSpecSync) processObject(object interface{}) (dynamic.ResourceInt
 	// get GVR (group, version, resource) out of GVK
 	mapping, err := s.k8sRestMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 	if err != nil {
-		return nil, nil, nil, errors.New(fmt.Sprintf("failed to get mapping of gvk %s- ",err))
+		return nil, nil, nil, errors.New(fmt.Sprintf("failed to get mapping of gvk %s- ", err))
 	}
 	// obtain REST interface for the GVR
 	var resourceInterface dynamic.ResourceInterface
@@ -166,7 +166,7 @@ func (s *LeafHubSpecSync) processObject(object interface{}) (dynamic.ResourceInt
 	// marshal unstructuredObj into JSON
 	data, err := json.Marshal(unstructuredObj)
 	if err != nil {
-		return nil, nil, nil, errors.New(fmt.Sprintf("failed to marshal unstructured object into json %s- ",err))
+		return nil, nil, nil, errors.New(fmt.Sprintf("failed to marshal unstructured object into json %s- ", err))
 	}
 	return resourceInterface, unstructuredObj, data, nil
 }

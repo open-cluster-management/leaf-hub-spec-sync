@@ -18,5 +18,5 @@ func main() {
 	defer specSyncController.Stop()
 
 	// if we got here, program stopped
-	close (bundleUpdatesChan)
+	close(bundleUpdatesChan)
 }

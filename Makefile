@@ -1,7 +1,8 @@
 
 # This makefile defines the following targets
 #
-#   - all (default) - downloads vendor libs, and build executable
+#   - all (default) - formats the code, downloads vendor libs, and builds executable
+#   - fmt - formats the code
 #   - vendor - download all third party libraries and puts them inside vendor directory
 #   - clean-vendor - removes third party libraries from vendor directory
 #   - lh-spec-sync - builds leaf-hub-spec-sync as an executable and puts it under build/bin
@@ -10,8 +11,12 @@
 #   - clean - cleans the build area (all executables under build/bin)
 #   - clean-all - superset of 'clean' that also removes vendor dir
 
-.PHONY: all				##downloads vendor libs, and build executable
-all: vendor lh-spec-sync
+.PHONY: all				##formats the code, downloads vendor libs, and builds executable
+all: fmt vendor lh-spec-sync
+
+.PHONY: fmt				##formats the code
+fmt:
+	@go fmt ./...
 
 .PHONY: vendor			##download all third party libraries and puts them inside vendor directory
 vendor:

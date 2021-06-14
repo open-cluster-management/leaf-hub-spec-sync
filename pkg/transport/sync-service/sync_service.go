@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	syncServiceProtocol = "SYNC_SERVICE_PROTOCOL"
-	syncServiceHost = "SYNC_SERVICE_HOST"
-	syncServicePort = "SYNC_SERVICE_PORT"
+	syncServiceProtocol        = "SYNC_SERVICE_PROTOCOL"
+	syncServiceHost            = "SYNC_SERVICE_HOST"
+	syncServicePort            = "SYNC_SERVICE_PORT"
 	syncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
 )
 
@@ -33,7 +33,7 @@ func NewSyncService(updatesChan chan *dataTypes.ObjectsBundle) *SyncService {
 	serverProtocol, host, port, pollingInterval := readEnvVars()
 	syncServiceClient := client.NewSyncServiceClient(serverProtocol, host, port)
 	syncServiceClient.SetAppKeyAndSecret("user@myorg", "")
-	return &SyncService {
+	return &SyncService{
 		client:              syncServiceClient,
 		pollingInterval:     pollingInterval,
 		objectsMetaDataChan: make(chan *client.ObjectMetaData),
