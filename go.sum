@@ -684,6 +684,8 @@ github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210610071023-
 github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210610071023-1f9e9321d24b/go.mod h1:goMA5VuzpIx5/y7uw+2sYdtKw4Oa1B6Zny3MF7b6J9I=
 github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210611174726-3def3bdadafd h1:qdidZkinlX5xLVvFBjFOiT/uJf+AwHGbWSLtv5zCzCc=
 github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210611174726-3def3bdadafd/go.mod h1:ShSxL0H2HCGgF7tLG2B75WRBjGO73q8EhLt88xXwKxQ=
+github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210614062210-2aa0a9f24757 h1:TXLlKT8ZlaPY7f+Y1sWC0ndfq/df43qZmuEwwE3uE/Q=
+github.com/open-cluster-management/hub-of-hubs-data-types v0.0.0-20210614062210-2aa0a9f24757/go.mod h1:ShSxL0H2HCGgF7tLG2B75WRBjGO73q8EhLt88xXwKxQ=
 github.com/open-horizon/edge-sync-service-client v0.0.0-20190711093406-dc3a19905da2 h1:ZmX/tuCgFVbe07pqObNWf14cAYpHN8gVRSkWnbtSUW4=
 github.com/open-horizon/edge-sync-service-client v0.0.0-20190711093406-dc3a19905da2/go.mod h1:rKW01VtqwtwaUQ+zkJ80X5EeGqsTblQE4J9HxPUtTAQ=
 github.com/open-horizon/edge-utilities v0.0.0-20190711093331-0908b45a7152 h1:YEvNOMo3ANOQ3AwsU0cCcBA4nKHDLUlyUCRWk5rBf68=

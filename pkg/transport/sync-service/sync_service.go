@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	dataTypes "github.com/open-cluster-management/hub-of-hubs-data-types"
+	"github.com/open-cluster-management/hub-of-hubs-data-types"
+	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-horizon/edge-sync-service-client/client"
 	"log"
 	"os"
@@ -23,13 +24,13 @@ type SyncService struct {
 	client              *client.SyncServiceClient
 	pollingInterval     int
 	objectsMetaDataChan chan *client.ObjectMetaData
-	updatesChan         chan *dataTypes.ObjectsBundle
+	updatesChan         chan *bundle.ObjectsBundle
 	stopChan            chan struct{}
 	startOnce           sync.Once
 	stopOnce            sync.Once
 }
 
-func NewSyncService(updatesChan chan *dataTypes.ObjectsBundle) *SyncService {
+func NewSyncService(updatesChan chan *bundle.ObjectsBundle) *SyncService {
 	serverProtocol, host, port, pollingInterval := readEnvVars()
 	syncServiceClient := client.NewSyncServiceClient(serverProtocol, host, port)
 	syncServiceClient.SetAppKeyAndSecret("user@myorg", "")
@@ -83,7 +84,7 @@ func (s *SyncService) Stop() {
 
 func (s *SyncService) handleBundles() {
 	// register for updates for spec bundles, this include all types of spec bundles each with a different id.
-	s.client.StartPollingForUpdates(dataTypes.SpecBundle, s.pollingInterval, s.objectsMetaDataChan)
+	s.client.StartPollingForUpdates(datatypes.SpecBundle, s.pollingInterval, s.objectsMetaDataChan)
 	for {
 		select {
 		case <-s.stopChan:
@@ -95,14 +96,14 @@ func (s *SyncService) handleBundles() {
 					objectMetaData.ObjectID))
 				continue
 			}
-			bundle := &dataTypes.ObjectsBundle{}
-			err := json.Unmarshal(buffer.Bytes(), bundle)
+			receivedBundle := &bundle.ObjectsBundle{}
+			err := json.Unmarshal(buffer.Bytes(), receivedBundle)
 			if err != nil {
 				log.Println(fmt.Sprintf("failed to parse bundle object with id %s from sync service",
 					objectMetaData.ObjectID))
 				continue
 			}
-			s.updatesChan <- bundle
+			s.updatesChan <- receivedBundle
 			err = s.client.MarkObjectReceived(objectMetaData)
 			if err != nil {
 				log.Println("failed to report object received to sync service")

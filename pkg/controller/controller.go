@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"log"
 	"strings"
 	"sync"
 
-	dataTypes "github.com/open-cluster-management/hub-of-hubs-data-types"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -34,14 +34,14 @@ type LeafHubSpecSync struct {
 	k8sDynamicClient    dynamic.Interface
 	k8sRestMapper       *restmapper.DeferredDiscoveryRESTMapper
 	transport           transport.Transport
-	bundleUpdatesChan   chan *dataTypes.ObjectsBundle
+	bundleUpdatesChan   chan *bundle.ObjectsBundle
 	unstructuredDecoder runtime.Serializer
 	forceChanges        bool
 	stopChan            chan struct{}
 	stopOnce            sync.Once
 }
 
-func NewLeafHubSpecSync(transport transport.Transport, updatesChan chan *dataTypes.ObjectsBundle) *LeafHubSpecSync {
+func NewLeafHubSpecSync(transport transport.Transport, updatesChan chan *bundle.ObjectsBundle) *LeafHubSpecSync {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -79,8 +79,8 @@ func (s *LeafHubSpecSync) syncObjects() {
 		select { // wait for incoming message to handle
 		case <-s.stopChan:
 			return
-		case bundle := <-s.bundleUpdatesChan:
-			for _, updatedObject := range bundle.Objects {
+		case receivedBundle := <-s.bundleUpdatesChan:
+			for _, updatedObject := range receivedBundle.Objects {
 				name, kind, err := s.applyObject(updatedObject)
 				if err != nil {
 					log.Println(err)
@@ -88,7 +88,7 @@ func (s *LeafHubSpecSync) syncObjects() {
 				}
 				log.Println("updated", kind, "-", name)
 			}
-			for _, deletedObject := range bundle.DeletedObjects {
+			for _, deletedObject := range receivedBundle.DeletedObjects {
 				name, kind, deleted, err := s.deleteObject(deletedObject)
 				if err != nil {
 					log.Println(err)
