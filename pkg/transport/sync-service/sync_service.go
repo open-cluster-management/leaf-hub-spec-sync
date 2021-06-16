@@ -78,8 +78,10 @@ func (s *SyncService) Start() {
 }
 
 func (s *SyncService) Stop() {
-	close(s.stopChan)
-	close(s.objectsMetaDataChan)
+	s.stopOnce.Do(func() {
+		close(s.stopChan)
+		close(s.objectsMetaDataChan)
+	})
 }
 
 func (s *SyncService) handleBundles() {

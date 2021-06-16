@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"log"
@@ -115,7 +114,7 @@ func (s *LeafHubSpecSync) applyObject(object interface{}) (string, string, error
 			Force:        &s.forceChanges,
 		})
 	if err != nil {
-		return "", "", errors.New(fmt.Sprintf("failed to apply object - %s - %s", err, data))
+		return "", "", fmt.Errorf("failed to apply object - %s - %s", err, data)
 	}
 	return unstructuredObj.GetName(), unstructuredObj.GetKind(), nil
 }
@@ -131,7 +130,7 @@ func (s *LeafHubSpecSync) deleteObject(object interface{}) (string, string, bool
 		if strings.HasSuffix(err.Error(), notFoundSuffixError) { //trying to delete object which doesn't exist
 			return unstructuredObj.GetName(), unstructuredObj.GetKind(), false, nil
 		} else {
-			return "", "", false, errors.New(fmt.Sprintf("failed to delete object - %s - %s", err, data))
+			return "", "", false, fmt.Errorf("failed to delete object - %s - %s", err, data)
 		}
 	}
 	return unstructuredObj.GetName(), unstructuredObj.GetKind(), true, nil
@@ -140,19 +139,19 @@ func (s *LeafHubSpecSync) deleteObject(object interface{}) (string, string, bool
 func (s *LeafHubSpecSync) processObject(object interface{}) (dynamic.ResourceInterface, *unstructured.Unstructured, []byte, error) {
 	objectBytes, err := json.Marshal(object)
 	if err != nil {
-		return nil, nil, nil, errors.New(fmt.Sprintf("failed to marshal the object into bytes - %s", err))
+		return nil, nil, nil, fmt.Errorf("failed to marshal the object into bytes - %s", err)
 	}
 	unstructuredObj := &unstructured.Unstructured{}
 	// GVK stands for group, version, kind
 	_, gvk, err := s.unstructuredDecoder.Decode(objectBytes, nil, unstructuredObj)
 	if err != nil {
-		return nil, nil, nil, errors.New(fmt.Sprintf("failed to decode object bytes to unstructured - %s", err))
+		return nil, nil, nil, fmt.Errorf("failed to decode object bytes to unstructured - %s", err)
 	}
 
 	// get GVR (group, version, resource) out of GVK
 	mapping, err := s.k8sRestMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 	if err != nil {
-		return nil, nil, nil, errors.New(fmt.Sprintf("failed to get mapping of gvk %s- ", err))
+		return nil, nil, nil, fmt.Errorf("failed to get mapping of gvk %s- ", err)
 	}
 	// obtain REST interface for the GVR
 	var resourceInterface dynamic.ResourceInterface
@@ -166,7 +165,7 @@ func (s *LeafHubSpecSync) processObject(object interface{}) (dynamic.ResourceInt
 	// marshal unstructuredObj into JSON
 	data, err := json.Marshal(unstructuredObj)
 	if err != nil {
-		return nil, nil, nil, errors.New(fmt.Sprintf("failed to marshal unstructured object into json %s- ", err))
+		return nil, nil, nil, fmt.Errorf("failed to marshal unstructured object into json %s- ", err)
 	}
 	return resourceInterface, unstructuredObj, data, nil
 }
