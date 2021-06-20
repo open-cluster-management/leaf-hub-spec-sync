@@ -5,14 +5,14 @@
 #   - fmt - formats the code
 #   - vendor - download all third party libraries and puts them inside vendor directory
 #   - clean-vendor - removes third party libraries from vendor directory
-#   - lh-spec-sync - builds leaf-hub-spec-sync as an executable and puts it under build/bin
+#   - leaf-hub-spec-sync - builds leaf-hub-spec-sync as an executable and puts it under build/bin
 #   - docker-build - builds docker image locally for running the components using docker
 #   - docker-push - pushes the local docker image to 'docker.io' docker registry
 #   - clean - cleans the build area (all executables under build/bin)
 #   - clean-all - superset of 'clean' that also removes vendor dir
 
 .PHONY: all				##formats the code, downloads vendor libs, and builds executable
-all: fmt vendor lh-spec-sync
+all: fmt vendor leaf-hub-spec-sync
 
 .PHONY: fmt				##formats the code
 fmt:
@@ -26,8 +26,8 @@ vendor:
 clean-vendor:
 	-@rm -rf vendor
 
-.PHONY: lh-spec-sync			##builds leaf-hub-spec-sync as an executable and puts it under build/bin
-lh-spec-sync:
+.PHONY: leaf-hub-spec-sync			##builds leaf-hub-spec-sync as an executable and puts it under build/bin
+leaf-hub-spec-sync:
 	@go build -o build/bin/lh-spec-sync cmd/main.go
 
 .PHONY: docker-build			##builds docker image locally for running the components using docker
