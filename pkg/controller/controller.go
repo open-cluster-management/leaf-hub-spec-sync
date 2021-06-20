@@ -42,7 +42,7 @@ func NewLeafHubSpecSync(transport transport.Transport, updatesChan chan *bundle.
 		transport:         transport,
 		bundleUpdatesChan: updatesChan,
 		forceChanges:      true,
-		stopChan:          make(chan struct{}),
+		stopChan:          make(chan struct{}, 1),
 	}
 }
 
