@@ -3,15 +3,13 @@ package controller
 import (
 	"context"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
+	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 	"log"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
 	"sync"
-
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
-
-	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -25,6 +23,7 @@ type LeafHubSpecSync struct {
 	bundleUpdatesChan chan *bundle.ObjectsBundle
 	forceChanges      bool
 	stopChan          chan struct{}
+	startOnce         sync.Once
 	stopOnce          sync.Once
 }
 
@@ -47,7 +46,9 @@ func NewLeafHubSpecSync(transport transport.Transport, updatesChan chan *bundle.
 }
 
 func (s *LeafHubSpecSync) Start() {
-	s.syncObjects()
+	s.startOnce.Do(func() {
+		s.syncObjects()
+	})
 
 }
 
