@@ -1,4 +1,9 @@
-
+# Copyright IBM Corp All Rights Reserved.
+# Copyright London Stock Exchange Group All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# -------------------------------------------------------------
 # This makefile defines the following targets
 #
 #   - all (default) - formats the code, downloads vendor libs, and builds executable
@@ -10,6 +15,8 @@
 #   - docker-push - pushes the local docker image to 'docker.io' docker registry
 #   - clean - cleans the build area (all executables under build/bin)
 #   - clean-all - superset of 'clean' that also removes vendor dir
+#   - lint - runs code analysis tools
+
 
 .PHONY: all				##formats the code, downloads vendor libs, and builds executable
 all: fmt vendor leaf-hub-spec-sync
@@ -45,6 +52,11 @@ clean:
 
 .PHONY: clean-all			##superset of 'clean' that also removes vendor dir
 clean-all: clean-vendor clean
+
+.PHONY: lint				##runs code analysis tools
+lint:
+	go vet ./...
+	golangci-lint run ./...
 
 .PHONY: help				##show this help message
 help:
