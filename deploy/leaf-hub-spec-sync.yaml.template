@@ -6,25 +6,17 @@ metadata:
     name: hoh-system
 ---
 
-kind: RoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
+apiVersion: v1
+kind: ServiceAccount
 metadata:
   name: leaf-hub-spec-sync
-  namespace: hoh-system
-subjects:
-- kind: ServiceAccount
-  name: leaf-hub-spec-sync
-roleRef:
-  kind: Role
-  name: leaf-hub-spec-sync
-  apiGroup: rbac.authorization.k8s.io
-
+  namespace: open-cluster-management
 ---
-kind: Role
+
+kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: leaf-hub-spec-sync
-  namespace: hoh-system
 rules:
 - apiGroups:
   - "policy.open-cluster-management.io"
@@ -44,7 +36,6 @@ rules:
   - ""
   resources:
   - events
-  - namespaces
   verbs:
   - create
   - delete
@@ -53,20 +44,6 @@ rules:
   - patch
   - update
   - watch
----
-
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: leaf-hub-spec-sync
-  namespace: hoh-system
----
-
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: leaf-hub-spec-sync
-rules:
 - apiGroups:
   - cluster.open-cluster-management.io
   resources:
@@ -84,7 +61,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: leaf-hub-spec-sync
-  namespace: hoh-system
+  namespace: open-cluster-management
 roleRef:
   kind: ClusterRole
   name: leaf-hub-spec-sync
@@ -95,7 +72,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: lh-spec-sync
-  namespace: hoh-system
+  namespace: open-cluster-management
 spec:
   replicas: 1
   selector:
