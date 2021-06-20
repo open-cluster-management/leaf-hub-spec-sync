@@ -28,7 +28,7 @@ clean-vendor:
 
 .PHONY: leaf-hub-spec-sync			##builds leaf-hub-spec-sync as an executable and puts it under build/bin
 leaf-hub-spec-sync:
-	@go build -o build/bin/lh-spec-sync cmd/main.go
+	@go build -o build/bin/leaf-hub-spec-sync cmd/main.go
 
 .PHONY: docker-build			##builds docker image locally for running the components using docker
 docker-build: all
