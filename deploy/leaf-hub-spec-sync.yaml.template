@@ -71,21 +71,21 @@ roleRef:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: lh-spec-sync
+  name: leaf-hub-spec-sync
   namespace: open-cluster-management
 spec:
   replicas: 1
   selector:
     matchLabels:
-      name: lh-spec-sync
+      name: leaf-hub-spec-sync
   template:
     metadata:
       labels:
-        name: lh-spec-sync
+        name: leaf-hub-spec-sync
     spec:
       serviceAccountName: leaf-hub-spec-sync
       containers:
-        - name: lh-spec-sync
+        - name: leaf-hub-spec-sync
           image: $IMAGE
           imagePullPolicy: Always
           env:
