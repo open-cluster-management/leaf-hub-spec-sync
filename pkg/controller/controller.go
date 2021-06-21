@@ -54,6 +54,7 @@ func (s *LeafHubSpecSync) Start() {
 
 func (s *LeafHubSpecSync) Stop() {
 	s.stopOnce.Do(func() {
+		s.stopChan <- struct{}{}
 		close(s.stopChan)
 	})
 }

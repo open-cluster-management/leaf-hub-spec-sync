@@ -33,7 +33,7 @@ vendor:
 clean-vendor:
 	-@rm -rf vendor
 
-.PHONY: leaf-hub-spec-sync			##builds leaf-hub-spec-sync as an executable and puts it under build/bin
+.PHONY: leaf-hub-spec-sync		##builds leaf-hub-spec-sync as an executable and puts it under build/bin
 leaf-hub-spec-sync:
 	@go build -o build/bin/leaf-hub-spec-sync cmd/main.go
 
