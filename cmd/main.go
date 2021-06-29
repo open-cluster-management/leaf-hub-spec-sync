@@ -13,7 +13,7 @@ func main() {
 	syncServiceObj.Start()
 	defer syncServiceObj.Stop()
 
-	specSyncController := controller.NewLeafHubSpecSync(syncServiceObj, bundleUpdatesChan)
+	specSyncController := controller.NewLeafHubSpecSync(bundleUpdatesChan)
 	specSyncController.Start()
 	defer specSyncController.Stop()
 
