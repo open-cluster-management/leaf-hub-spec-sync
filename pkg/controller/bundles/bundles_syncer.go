@@ -20,7 +20,7 @@ type LeafHubBundlesSpecSync struct {
 }
 
 // AddLeafHubBundlesSpecSync adds bundles spec syncer to the manager.
-func AddLeafHubBundlesSpecSync(mgr ctrl.Manager, bundleUpdatesChan chan *bundle.ObjectsBundle) error {
+func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan *bundle.ObjectsBundle) error {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -33,6 +33,7 @@ func AddLeafHubBundlesSpecSync(mgr ctrl.Manager, bundleUpdatesChan chan *bundle.
 	}
 
 	return mgr.Add(&LeafHubBundlesSpecSync{
+		log:               log,
 		k8sClient:         k8sClient,
 		bundleUpdatesChan: bundleUpdatesChan,
 	})

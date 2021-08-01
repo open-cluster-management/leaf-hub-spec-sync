@@ -20,7 +20,7 @@ type LeafHubObjectsSpecSync struct {
 }
 
 // AddLeafHubObjectsSpecSync adds objects spec syncer to the manager.
-func AddLeafHubObjectsSpecSync(mgr ctrl.Manager, objectsUpdatesChan chan *objects.HubOfHubsObject) error {
+func AddLeafHubObjectsSpecSync(log logr.Logger, mgr ctrl.Manager, objectsUpdatesChan chan *objects.HubOfHubsObject) error {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -33,6 +33,7 @@ func AddLeafHubObjectsSpecSync(mgr ctrl.Manager, objectsUpdatesChan chan *object
 	}
 
 	return mgr.Add(&LeafHubObjectsSpecSync{
+		log:                log,
 		k8sClient:          k8sClient,
 		objectsUpdatesChan: objectsUpdatesChan,
 	})
