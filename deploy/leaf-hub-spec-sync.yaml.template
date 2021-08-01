@@ -21,6 +21,7 @@ rules:
 - apiGroups:
   - "policy.open-cluster-management.io"
   - "apps.open-cluster-management.io"
+  - "hub-of-hubs.open-cluster-management.io"
   resources:
   - '*'
   verbs:
@@ -89,6 +90,11 @@ spec:
           image: $IMAGE
           imagePullPolicy: Always
           env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                 apiVersion: v1
+                 fieldPath: metadata.namespace
             - name: SYNC_SERVICE_PROTOCOL
               value: "http"
             - name: SYNC_SERVICE_HOST
@@ -97,3 +103,8 @@ spec:
               value: "$SYNC_SERVICE_PORT"
             - name: SYNC_SERVICE_POLLING_INTERVAL
               value: "5"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                 apiVersion: v1
+                 fieldPath: metadata.namespace

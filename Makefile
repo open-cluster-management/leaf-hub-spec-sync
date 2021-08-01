@@ -6,24 +6,29 @@
 # -------------------------------------------------------------
 # This makefile defines the following targets
 #
-#   - all (default) - formats the code, downloads vendor libs, and builds executable
+#   - all (default) - formats the code, runs liners, downloads vendor libs, and builds executable
 #   - fmt - formats the code
 #   - vendor - download all third party libraries and puts them inside vendor directory
 #   - clean-vendor - removes third party libraries from vendor directory
-#   - leaf-hub-spec-sync - builds leaf-hub-spec-sync as an executable and puts it under build/bin
-#   - docker-build - builds docker image locally for running the components using docker
-#   - docker-push - pushes the local docker image to 'docker.io' docker registry
-#   - clean - cleans the build area (all executables under build/bin)
+#   - build - builds the controller
+#   - build-images - builds docker image locally for running the components using docker
+#   - push-images - pushes the local docker image to docker registry
+#   - clean - cleans the build directories
 #   - clean-all - superset of 'clean' that also removes vendor dir
 #   - lint - runs code analysis tools
 
+COMPONENT := $(shell basename $(shell pwd))
+IMAGE_TAG ?= latest
+IMAGE := ${REGISTRY}/${COMPONENT}:${IMAGE_TAG}
 
-.PHONY: all				##formats the code, downloads vendor libs, and builds executable
-all: fmt vendor leaf-hub-spec-sync
+.PHONY: all				##formats the code, runs liners, downloads vendor libs, and builds executable
+all: clean-vendor fmt lint vendor build
 
 .PHONY: fmt				##formats the code
 fmt:
+	@gci -w .
 	@go fmt ./...
+	@gofumpt -w .
 
 .PHONY: vendor			##download all third party libraries and puts them inside vendor directory
 vendor:
@@ -33,29 +38,29 @@ vendor:
 clean-vendor:
 	-@rm -rf vendor
 
-.PHONY: leaf-hub-spec-sync		##builds leaf-hub-spec-sync as an executable and puts it under build/bin
-leaf-hub-spec-sync:
-	@go build -o build/bin/leaf-hub-spec-sync cmd/main.go
+.PHONY: build			##builds the controller
+build:
+	@go build -o bin/${COMPONENT} cmd/manager/main.go
 
-.PHONY: docker-build			##builds docker image locally for running the components using docker
-docker-build: all
-	@docker build -t leaf-hub-spec-sync -f build/Dockerfile .
+.PHONY: build-images			##builds docker image locally for running the components using docker
+build-images: all
+	docker build -t ${IMAGE} --build-arg COMPONENT=${COMPONENT} -f build/Dockerfile .
 
-.PHONY: docker-push			##pushes the local docker image to 'docker.io' docker registry
-docker-push: docker-build
-	@docker tag leaf-hub-spec-sync ${IMAGE}
+.PHONY: push-images			##pushes the local docker image to docker registry
+push-images: build-images
 	@docker push ${IMAGE}
 
-.PHONY: clean			##cleans the build area (all executables under build/bin)
+.PHONY: clean			##cleans the build directories
 clean:
-	@rm -rf build/bin
+	@rm -rf bin
 
 .PHONY: clean-all			##superset of 'clean' that also removes vendor dir
 clean-all: clean-vendor clean
 
 .PHONY: lint				##runs code analysis tools
-lint:
+lint: clean-vendor
 	go vet ./...
+	golint ./...
 	golangci-lint run ./...
 
 .PHONY: help				##show this help message
