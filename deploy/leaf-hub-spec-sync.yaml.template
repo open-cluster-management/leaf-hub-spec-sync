@@ -34,18 +34,6 @@ rules:
   - watch
   - deletecollection
 - apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - cluster.open-cluster-management.io
   resources:
   - managedclusters
@@ -58,6 +46,7 @@ rules:
   resources:
   - pods
   - configmaps
+  - events
   verbs:
   - create
   - delete
