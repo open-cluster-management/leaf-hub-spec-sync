@@ -9,7 +9,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/objects"
 	lhSyncService "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/sync-service"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -53,17 +52,14 @@ func doMain() int {
 	// transport layer initialization
 	bundleUpdatesChan := make(chan *bundle.ObjectsBundle)
 	defer close(bundleUpdatesChan)
-	objectsUpdatesChan := make(chan *objects.HubOfHubsObject)
-	defer close(objectsUpdatesChan)
 
-	syncService, err := lhSyncService.NewSyncService(ctrl.Log.WithName("sync-service"), bundleUpdatesChan,
-		objectsUpdatesChan)
+	syncService, err := lhSyncService.NewSyncService(ctrl.Log.WithName("sync-service"), bundleUpdatesChan)
 	if err != nil {
 		log.Error(err, "initialization error", "failed to initialize", "SyncService")
 		return 1
 	}
 
-	mgr, err := createManager(leaderElectionNamespace, metricsHost, metricsPort, bundleUpdatesChan, objectsUpdatesChan)
+	mgr, err := createManager(leaderElectionNamespace, metricsHost, metricsPort, bundleUpdatesChan)
 	if err != nil {
 		log.Error(err, "Failed to create manager")
 		return 1
@@ -83,8 +79,7 @@ func doMain() int {
 }
 
 func createManager(leaderElectionNamespace, metricsHost string, metricsPort int32,
-	bundleUpdatesChan chan *bundle.ObjectsBundle,
-	objectUpdatesChan chan *objects.HubOfHubsObject) (ctrl.Manager, error) {
+	bundleUpdatesChan chan *bundle.ObjectsBundle) (ctrl.Manager, error) {
 	options := ctrl.Options{
 		MetricsBindAddress:      fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 		LeaderElection:          true,
@@ -97,7 +92,7 @@ func createManager(leaderElectionNamespace, metricsHost string, metricsPort int3
 		return nil, fmt.Errorf("failed to create a new manager: %w", err)
 	}
 
-	if err := controller.AddSpecSyncers(mgr, bundleUpdatesChan, objectUpdatesChan); err != nil {
+	if err := controller.AddSpecSyncers(mgr, bundleUpdatesChan); err != nil {
 		return nil, fmt.Errorf("failed to add spec syncers: %w", err)
 	}
 

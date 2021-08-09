@@ -3,17 +3,16 @@ package syncservice
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"sync"
 
 	"github.com/go-logr/logr"
-	"github.com/open-cluster-management/hub-of-hubs-data-types"
+	datatypes "github.com/open-cluster-management/hub-of-hubs-data-types"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/objects"
 	"github.com/open-horizon/edge-sync-service-client/client"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -23,23 +22,25 @@ const (
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
 )
 
-// SyncService abstracts Sync Service client
+var (
+	errEnvVarNotFound        = errors.New("not found environment variable")
+	errSyncServiceReadFailed = errors.New("sync service error")
+)
+
+// SyncService abstracts Sync Service client.
 type SyncService struct {
 	log                 logr.Logger
 	client              *client.SyncServiceClient
 	pollingInterval     int
-	objectsMetaDataChan chan *client.ObjectMetaData
 	bundlesMetaDataChan chan *client.ObjectMetaData
 	bundlesUpdatesChan  chan *bundle.ObjectsBundle
-	objectsUpdatesChan  chan *objects.HubOfHubsObject
 	stopChan            chan struct{}
 	startOnce           sync.Once
 	stopOnce            sync.Once
 }
 
-// NewSyncService creates a new instance of SyncService
-func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle,
-	objectUpdatesChan chan *objects.HubOfHubsObject) (*SyncService, error) {
+// NewSyncService creates a new instance of SyncService.
+func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) (*SyncService, error) {
 	serverProtocol, host, port, pollingInterval, err := readEnvVars()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize sync service - %w", err)
@@ -54,9 +55,7 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundl
 		client:              syncServiceClient,
 		pollingInterval:     pollingInterval,
 		bundlesMetaDataChan: make(chan *client.ObjectMetaData),
-		objectsMetaDataChan: make(chan *client.ObjectMetaData),
 		bundlesUpdatesChan:  bundleUpdatesChan,
-		objectsUpdatesChan:  objectUpdatesChan,
 		stopChan:            make(chan struct{}, 1),
 	}, nil
 }
@@ -64,17 +63,17 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundl
 func readEnvVars() (string, string, uint16, int, error) {
 	protocol, found := os.LookupEnv(envVarSyncServiceProtocol)
 	if !found {
-		return "", "", 0, 0, fmt.Errorf("not found: environment variable %s", envVarSyncServiceProtocol)
+		return "", "", 0, 0, fmt.Errorf("%w: %s", errEnvVarNotFound, envVarSyncServiceProtocol)
 	}
 
 	host, found := os.LookupEnv(envVarSyncServiceHost)
 	if !found {
-		return "", "", 0, 0, fmt.Errorf("not found: environment variable %s", envVarSyncServiceHost)
+		return "", "", 0, 0, fmt.Errorf("%w: %s", errEnvVarNotFound, envVarSyncServiceHost)
 	}
 
 	portString, found := os.LookupEnv(envVarSyncServicePort)
 	if !found {
-		return "", "", 0, 0, fmt.Errorf("not found: environment variable %s", envVarSyncServicePort)
+		return "", "", 0, 0, fmt.Errorf("%w: %s", errEnvVarNotFound, envVarSyncServicePort)
 	}
 
 	port, err := strconv.Atoi(portString)
@@ -85,7 +84,7 @@ func readEnvVars() (string, string, uint16, int, error) {
 
 	pollingIntervalString, found := os.LookupEnv(envVarSyncServicePollingInterval)
 	if !found {
-		return "", "", 0, 0, fmt.Errorf("not found: environment variable %s", envVarSyncServicePollingInterval)
+		return "", "", 0, 0, fmt.Errorf("%w: %s", errEnvVarNotFound, envVarSyncServicePollingInterval)
 	}
 
 	pollingInterval, err := strconv.Atoi(pollingIntervalString)
@@ -97,26 +96,25 @@ func readEnvVars() (string, string, uint16, int, error) {
 	return protocol, host, uint16(port), pollingInterval, nil
 }
 
-// Start function starts sync service
+// Start function starts sync service.
 func (s *SyncService) Start() {
 	s.startOnce.Do(func() {
 		go s.handleBundles()
-		go s.handleObjects()
 	})
 }
 
-// Stop function stops sync service
+// Stop function stops sync service.
 func (s *SyncService) Stop() {
 	s.stopOnce.Do(func() {
 		close(s.stopChan)
 		close(s.bundlesMetaDataChan)
-		close(s.objectsMetaDataChan)
 	})
 }
 
 func (s *SyncService) handleBundles() {
 	// register for updates for spec bundles and config objects, includes all types of spec bundles.
 	s.client.StartPollingForUpdates(datatypes.SpecBundle, s.pollingInterval, s.bundlesMetaDataChan)
+
 	for {
 		select {
 		case <-s.stopChan:
@@ -124,7 +122,7 @@ func (s *SyncService) handleBundles() {
 		case objectMetaData := <-s.bundlesMetaDataChan:
 			var buf bytes.Buffer
 			if !s.client.FetchObjectData(objectMetaData, &buf) {
-				s.log.Error(errors.New("sync service error"), "failed to read bundle from sync service",
+				s.log.Error(errSyncServiceReadFailed, "failed to read bundle from sync service",
 					"ObjectId", objectMetaData.ObjectID)
 				continue
 			}
@@ -136,35 +134,6 @@ func (s *SyncService) handleBundles() {
 			}
 
 			s.bundlesUpdatesChan <- receivedBundle
-			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
-				s.log.Error(err, "failed to report object received to sync service")
-			}
-		}
-	}
-}
-
-func (s *SyncService) handleObjects() {
-	// register for config updates from hub of hubs.
-	s.client.StartPollingForUpdates(datatypes.Config, s.pollingInterval, s.objectsMetaDataChan)
-	for {
-		select {
-		case <-s.stopChan:
-			return
-		case objectMetaData := <-s.objectsMetaDataChan:
-			var buf bytes.Buffer
-			if !s.client.FetchObjectData(objectMetaData, &buf) {
-				s.log.Error(errors.New("sync service error"), "failed to read object from sync service",
-					"ObjectId", objectMetaData.ObjectID)
-				continue
-			}
-
-			receivedObject := &objects.HubOfHubsObject{}
-			if err := json.Unmarshal(buf.Bytes(), receivedObject); err != nil {
-				s.log.Error(err, "failed to parse object", "ObjectId", objectMetaData.ObjectID)
-				continue
-			}
-
-			s.objectsUpdatesChan <- receivedObject
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
 				s.log.Error(err, "failed to report object received to sync service")
 			}

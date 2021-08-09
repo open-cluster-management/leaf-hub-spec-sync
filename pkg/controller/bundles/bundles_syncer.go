@@ -12,7 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// LeafHubBundlesSpecSync syncs bundles spec objects
+// LeafHubBundlesSpecSync syncs bundles spec objects.
 type LeafHubBundlesSpecSync struct {
 	log               logr.Logger
 	k8sClient         client.Client
@@ -32,11 +32,15 @@ func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesC
 		return fmt.Errorf("failed to initialize k8s client - %w", err)
 	}
 
-	return mgr.Add(&LeafHubBundlesSpecSync{
+	if err := mgr.Add(&LeafHubBundlesSpecSync{
 		log:               log,
 		k8sClient:         k8sClient,
 		bundleUpdatesChan: bundleUpdatesChan,
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to add bundles spec syncer - %w", err)
+	}
+
+	return nil
 }
 
 // Start function starts bundles spec syncer.
@@ -45,6 +49,7 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 	defer cancelContext()
 
 	go syncer.sync(ctx)
+
 	for {
 		<-stopChannel // blocking wait for stop event
 		syncer.log.Info("stopped bundles syncer")
@@ -56,6 +61,7 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 
 func (syncer *LeafHubBundlesSpecSync) sync(ctx context.Context) {
 	syncer.log.Info("start bundles syncing...")
+
 	for {
 		receivedBundle := <-syncer.bundleUpdatesChan
 		for _, obj := range receivedBundle.Objects {
@@ -67,6 +73,7 @@ func (syncer *LeafHubBundlesSpecSync) sync(ctx context.Context) {
 					obj.GetNamespace(), "kind", obj.GetKind())
 			}
 		}
+
 		for _, obj := range receivedBundle.DeletedObjects {
 			if deleted, err := helpers.DeleteObject(ctx, syncer.k8sClient, obj); err != nil {
 				syncer.log.Error(err, "failed to delete object", "name", obj.GetName(),
