@@ -7,6 +7,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller/helpers"
+	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -17,10 +18,12 @@ type LeafHubBundlesSpecSync struct {
 	log               logr.Logger
 	k8sClient         client.Client
 	bundleUpdatesChan chan *bundle.ObjectsBundle
+	transport         transport.Transport
 }
 
 // AddLeafHubBundlesSpecSync adds bundles spec syncer to the manager.
-func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan *bundle.ObjectsBundle) error {
+func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager,
+	bundleUpdatesChan chan *bundle.ObjectsBundle, transport transport.Transport) error {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -36,6 +39,7 @@ func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesC
 		log:               log,
 		k8sClient:         k8sClient,
 		bundleUpdatesChan: bundleUpdatesChan,
+		transport:         transport,
 	}); err != nil {
 		return fmt.Errorf("failed to add bundles spec syncer - %w", err)
 	}
@@ -83,5 +87,7 @@ func (syncer *LeafHubBundlesSpecSync) sync(ctx context.Context) {
 					obj.GetNamespace(), "kind", obj.GetKind())
 			}
 		}
+
+		syncer.transport.CommitAsync(receivedBundle)
 	}
 }

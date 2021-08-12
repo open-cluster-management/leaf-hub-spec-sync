@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller"
+	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
+	kafkaclient "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/kafka-client"
 	lhSyncService "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/sync-service"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -20,16 +23,43 @@ import (
 )
 
 const (
-	metricsHost                     = "0.0.0.0"
-	metricsPort               int32 = 9435
-	envVarControllerNamespace       = "POD_NAMESPACE"
-	leaderElectionLockName          = "leaf-hub-spec-sync-lock"
+	metricsHost                        = "0.0.0.0"
+	metricsPort                  int32 = 9435
+	kafkaTransportTypeName             = "kafka"
+	syncServiceTransportTypeName       = "syncservice"
+	envVarControllerNamespace          = "POD_NAMESPACE"
+	envVarTransportComponent           = "LH_TRANSPORT_TYPE"
+	leaderElectionLockName             = "leaf-hub-spec-sync-lock"
 )
+
+var errEnvVarIllegalValue = errors.New("environment variable illegal value")
 
 func printVersion(log logr.Logger) {
 	log.Info(fmt.Sprintf("Go Version: %s", runtime.Version()))
 	log.Info(fmt.Sprintf("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH))
 	log.Info(fmt.Sprintf("Version of operator-sdk: %v", sdkVersion.Version))
+}
+
+// function to choose transport type based on env var.
+func getTransport(transportType string, bundleUpdatesChan chan *bundle.ObjectsBundle) (transport.Transport, error) {
+	switch transportType {
+	case kafkaTransportTypeName:
+		kafkaProducer, err := kafkaclient.NewLHConsumer(ctrl.Log.WithName("kafka-client"), bundleUpdatesChan)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create lh-kafka-consumer: %w", err)
+		}
+
+		return kafkaProducer, nil
+	case syncServiceTransportTypeName:
+		syncService, err := lhSyncService.NewSyncService(ctrl.Log.WithName("sync-service"), bundleUpdatesChan)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create sync-service: %w", err)
+		}
+
+		return syncService, nil
+	default:
+		return nil, errEnvVarIllegalValue
+	}
 }
 
 // function to handle defers with exit, see https://stackoverflow.com/a/27629493/553720.
@@ -49,24 +79,30 @@ func doMain() int {
 		return 1
 	}
 
+	transportType, found := os.LookupEnv(envVarTransportComponent)
+	if !found {
+		log.Error(nil, "Not found:", "environment variable", envVarTransportComponent)
+		return 1
+	}
+
 	// transport layer initialization
 	bundleUpdatesChan := make(chan *bundle.ObjectsBundle)
 	defer close(bundleUpdatesChan)
 
-	syncService, err := lhSyncService.NewSyncService(ctrl.Log.WithName("sync-service"), bundleUpdatesChan)
+	transportObj, err := getTransport(transportType, bundleUpdatesChan)
 	if err != nil {
-		log.Error(err, "initialization error", "failed to initialize", "SyncService")
+		log.Error(err, "initialization error", "failed to initialize", transportType)
 		return 1
 	}
 
-	mgr, err := createManager(leaderElectionNamespace, metricsHost, metricsPort, bundleUpdatesChan)
+	mgr, err := createManager(leaderElectionNamespace, metricsHost, metricsPort, bundleUpdatesChan, transportObj)
 	if err != nil {
 		log.Error(err, "Failed to create manager")
 		return 1
 	}
 
-	syncService.Start()
-	defer syncService.Stop()
+	transportObj.Start()
+	defer transportObj.Stop()
 
 	log.Info("Starting the Cmd.")
 
@@ -79,7 +115,7 @@ func doMain() int {
 }
 
 func createManager(leaderElectionNamespace, metricsHost string, metricsPort int32,
-	bundleUpdatesChan chan *bundle.ObjectsBundle) (ctrl.Manager, error) {
+	bundleUpdatesChan chan *bundle.ObjectsBundle, transport transport.Transport) (ctrl.Manager, error) {
 	options := ctrl.Options{
 		MetricsBindAddress:      fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 		LeaderElection:          true,
@@ -92,7 +128,7 @@ func createManager(leaderElectionNamespace, metricsHost string, metricsPort int3
 		return nil, fmt.Errorf("failed to create a new manager: %w", err)
 	}
 
-	if err := controller.AddSpecSyncers(mgr, bundleUpdatesChan); err != nil {
+	if err := controller.AddSpecSyncers(mgr, bundleUpdatesChan, transport); err != nil {
 		return nil, fmt.Errorf("failed to add spec syncers: %w", err)
 	}
 
