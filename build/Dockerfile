@@ -5,8 +5,15 @@ FROM golang:1.16 AS builder
 
 ARG COMPONENT
 WORKDIR /workspace/${COMPONENT}
+COPY go.mod go.mod
+COPY go.sum go.sum
 
-COPY bin/leaf-hub-spec-sync bin/leaf-hub-spec-sync
+RUN go mod download
+
+COPY Makefile Makefile
+COPY cmd/ cmd/
+COPY pkg/ pkg/
+RUN make build
 
 # Stage 2: Copy the binaries from the image builder to the base image
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
