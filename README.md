@@ -45,14 +45,14 @@ The leaf hub spec sync component of [Hub-of-Hubs](https://github.com/open-cluste
     ```
 If you chose Kafka for transport, set the following environment variables:
 
-1.  Set the `KAFKA_CONSUMER_ID` environment variable to hold the ID of the producer.
+1.  Set the `KAFKA_CONSUMER_ID` environment variable to hold the ID of the consumer.
     ```
-    $ export KAFKA_PRODUCER_ID=...
+    $ export KAFKA_CONSUMER_ID=...
     ```
 
 1.  Set the `KAFKA_HOSTS` environment variable to hold the kafka bootstrap servers host.
     ```
-    $ export KAFKA_PRODUCER_ID=...
+    $ export KAFKA_HOSTS=...
     ```
 
 Otherwise, if you chose Sync-Service as transport, set the following:
