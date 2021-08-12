@@ -5,15 +5,8 @@ FROM golang:1.16 AS builder
 
 ARG COMPONENT
 WORKDIR /workspace/${COMPONENT}
-COPY go.mod go.mod
-COPY go.sum go.sum
 
-RUN go mod download
-
-COPY Makefile Makefile
-COPY cmd/ cmd/
-COPY pkg/ pkg/
-RUN make build
+COPY bin/leaf-hub-spec-sync bin/leaf-hub-spec-sync
 
 # Stage 2: Copy the binaries from the image builder to the base image
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
@@ -29,6 +22,10 @@ RUN  /usr/local/scripts/user_setup
 
 RUN microdnf update && \
     microdnf clean all
+
+# allow user to fully control the bin directory (for transport certificates) -- for now
+RUN chown ${USER_UID}:0 /usr/local/bin
+RUN chmod 0775 /usr/local/bin
 
 USER ${USER_UID}
 ENTRYPOINT ["/usr/local/bin/manager"]
