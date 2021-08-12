@@ -27,18 +27,6 @@ var (
 	errSyncServiceReadFailed = errors.New("sync service error")
 )
 
-// SyncService abstracts Sync Service client.
-type SyncService struct {
-	log                 logr.Logger
-	client              *client.SyncServiceClient
-	pollingInterval     int
-	bundlesMetaDataChan chan *client.ObjectMetaData
-	bundlesUpdatesChan  chan *bundle.ObjectsBundle
-	stopChan            chan struct{}
-	startOnce           sync.Once
-	stopOnce            sync.Once
-}
-
 // NewSyncService creates a new instance of SyncService.
 func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) (*SyncService, error) {
 	serverProtocol, host, port, pollingInterval, err := readEnvVars()
@@ -58,6 +46,18 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundl
 		bundlesUpdatesChan:  bundleUpdatesChan,
 		stopChan:            make(chan struct{}, 1),
 	}, nil
+}
+
+// SyncService abstracts Sync Service client.
+type SyncService struct {
+	log                 logr.Logger
+	client              *client.SyncServiceClient
+	pollingInterval     int
+	bundlesMetaDataChan chan *client.ObjectMetaData
+	bundlesUpdatesChan  chan *bundle.ObjectsBundle
+	stopChan            chan struct{}
+	startOnce           sync.Once
+	stopOnce            sync.Once
 }
 
 func readEnvVars() (string, string, uint16, int, error) {
@@ -110,6 +110,9 @@ func (s *SyncService) Stop() {
 		close(s.bundlesMetaDataChan)
 	})
 }
+
+// CommitAsync commits a transported message that was processed locally.
+func (s *SyncService) CommitAsync(bundle interface{}) {}
 
 func (s *SyncService) handleBundles() {
 	// register for updates for spec bundles and config objects, includes all types of spec bundles.
