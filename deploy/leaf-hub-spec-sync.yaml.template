@@ -100,7 +100,7 @@ spec:
             - name: LH_TRANSPORT_TYPE
               value: "$LH_TRANSPORT_TYPE"
             - name: KAFKA_CONSUMER_ID
-              value: "lh_spec_consumer"
+              value: "lh-spec-consumer"
             - name: KAFKA_CONSUMER_HOSTS
               value: "$KAFKA_CONSUMER_HOSTS"
             - name: KAFKA_CONSUMER_TOPIC
