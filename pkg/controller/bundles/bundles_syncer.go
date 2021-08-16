@@ -63,24 +63,29 @@ func (syncer *LeafHubBundlesSpecSync) sync(ctx context.Context) {
 	syncer.log.Info("start bundles syncing...")
 
 	for {
-		receivedBundle := <-syncer.bundleUpdatesChan
-		for _, obj := range receivedBundle.Objects {
-			if err := helpers.UpdateObject(ctx, syncer.k8sClient, obj); err != nil {
-				syncer.log.Error(err, "failed to update object", "name", obj.GetName(),
-					"namespace", obj.GetNamespace(), "kind", obj.GetKind())
-			} else {
-				syncer.log.Info("object updated", "name", obj.GetName(), "namespace",
-					obj.GetNamespace(), "kind", obj.GetKind())
-			}
-		}
+		select {
+		case <-ctx.Done():
+			return
 
-		for _, obj := range receivedBundle.DeletedObjects {
-			if deleted, err := helpers.DeleteObject(ctx, syncer.k8sClient, obj); err != nil {
-				syncer.log.Error(err, "failed to delete object", "name", obj.GetName(),
-					"namespace", obj.GetNamespace(), "kind", obj.GetKind())
-			} else if deleted {
-				syncer.log.Info("object deleted", "name", obj.GetName(), "namespace",
-					obj.GetNamespace(), "kind", obj.GetKind())
+		case receivedBundle := <-syncer.bundleUpdatesChan:
+			for _, obj := range receivedBundle.Objects {
+				if err := helpers.UpdateObject(ctx, syncer.k8sClient, obj); err != nil {
+					syncer.log.Error(err, "failed to update object", "name", obj.GetName(),
+						"namespace", obj.GetNamespace(), "kind", obj.GetKind())
+				} else {
+					syncer.log.Info("object updated", "name", obj.GetName(), "namespace",
+						obj.GetNamespace(), "kind", obj.GetKind())
+				}
+			}
+
+			for _, obj := range receivedBundle.DeletedObjects {
+				if deleted, err := helpers.DeleteObject(ctx, syncer.k8sClient, obj); err != nil {
+					syncer.log.Error(err, "failed to delete object", "name", obj.GetName(),
+						"namespace", obj.GetNamespace(), "kind", obj.GetKind())
+				} else if deleted {
+					syncer.log.Info("object deleted", "name", obj.GetName(), "namespace",
+						obj.GetNamespace(), "kind", obj.GetKind())
+				}
 			}
 		}
 	}

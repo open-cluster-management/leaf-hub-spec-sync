@@ -9,6 +9,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller"
+	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
 	lhSyncService "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/sync-service"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -59,14 +60,11 @@ func doMain() int {
 		return 1
 	}
 
-	mgr, err := createManager(leaderElectionNamespace, metricsHost, metricsPort, bundleUpdatesChan)
+	mgr, err := createManager(syncService, leaderElectionNamespace, metricsHost, metricsPort, bundleUpdatesChan)
 	if err != nil {
 		log.Error(err, "Failed to create manager")
 		return 1
 	}
-
-	syncService.Start()
-	defer syncService.Stop()
 
 	log.Info("Starting the Cmd.")
 
@@ -78,7 +76,7 @@ func doMain() int {
 	return 0
 }
 
-func createManager(leaderElectionNamespace, metricsHost string, metricsPort int32,
+func createManager(transport transport.Transport, leaderElectionNamespace, metricsHost string, metricsPort int32,
 	bundleUpdatesChan chan *bundle.ObjectsBundle) (ctrl.Manager, error) {
 	options := ctrl.Options{
 		MetricsBindAddress:      fmt.Sprintf("%s:%d", metricsHost, metricsPort),
@@ -94,6 +92,11 @@ func createManager(leaderElectionNamespace, metricsHost string, metricsPort int3
 
 	if err := controller.AddSpecSyncers(mgr, bundleUpdatesChan); err != nil {
 		return nil, fmt.Errorf("failed to add spec syncers: %w", err)
+	}
+
+	err = mgr.Add(transport)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add transport: %w", err)
 	}
 
 	return mgr, nil
