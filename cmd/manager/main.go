@@ -11,7 +11,7 @@ import (
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
-	kafkaclient "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/kafka-client"
+	kafka "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/kafka-client"
 	lhSyncService "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/sync-service"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -28,7 +28,7 @@ const (
 	kafkaTransportTypeName             = "kafka"
 	syncServiceTransportTypeName       = "syncservice"
 	envVarControllerNamespace          = "POD_NAMESPACE"
-	envVarTransportComponent           = "LH_TRANSPORT_TYPE"
+	envVarTransportType                = "TRANSPORT_TYPE"
 	leaderElectionLockName             = "leaf-hub-spec-sync-lock"
 )
 
@@ -44,9 +44,9 @@ func printVersion(log logr.Logger) {
 func getTransport(transportType string, bundleUpdatesChan chan *bundle.ObjectsBundle) (transport.Transport, error) {
 	switch transportType {
 	case kafkaTransportTypeName:
-		kafkaProducer, err := kafkaclient.NewLHConsumer(ctrl.Log.WithName("kafka-client"), bundleUpdatesChan)
+		kafkaProducer, err := kafka.NewConsumer(ctrl.Log.WithName("kafka-client"), bundleUpdatesChan)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create lh-kafka-consumer: %w", err)
+			return nil, fmt.Errorf("failed to create kafka-consumer: %w", err)
 		}
 
 		return kafkaProducer, nil
@@ -79,9 +79,9 @@ func doMain() int {
 		return 1
 	}
 
-	transportType, found := os.LookupEnv(envVarTransportComponent)
+	transportType, found := os.LookupEnv(envVarTransportType)
 	if !found {
-		log.Error(nil, "Not found:", "environment variable", envVarTransportComponent)
+		log.Error(nil, "Not found:", "environment variable", envVarTransportType)
 		return 1
 	}
 

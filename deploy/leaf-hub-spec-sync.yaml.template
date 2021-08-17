@@ -97,16 +97,16 @@ spec:
                 fieldRef:
                  apiVersion: v1
                  fieldPath: metadata.namespace
-            - name: LH_TRANSPORT_TYPE
-              value: "$LH_TRANSPORT_TYPE"
+            - name: TRANSPORT_TYPE
+              value: "$TRANSPORT_TYPE"
             - name: KAFKA_CONSUMER_ID
               value: "lh-spec-consumer"
             - name: KAFKA_CONSUMER_HOSTS
-              value: "$KAFKA_CONSUMER_HOSTS"
+              value: "my-cluster-kafka-tls-bootstrap-kafka.apps.veisenbe-hoh2.dev10.red-chesterfield.com:443"
             - name: KAFKA_CONSUMER_TOPIC
               value: "spec-path-topic"
             - name: KAFKA_SSL_CA
-              value: "enabled"
+              value: "$KAFKA_SSL_CA"
             - name: SYNC_SERVICE_PROTOCOL
               value: "http"
             - name: SYNC_SERVICE_HOST

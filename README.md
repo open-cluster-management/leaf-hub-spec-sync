@@ -39,22 +39,18 @@ The leaf hub spec sync component of [Hub-of-Hubs](https://github.com/open-cluste
     $ export IMAGE=$REGISTRY/$(basename $(pwd)):latest
     ```
 
-1.  Set the `LH_TRANSPORT_TYPE` environment variable to "kafka" or "syncservice" to set which transport to use.
+1.  Set the `TRANSPORT_TYPE` environment variable to "kafka" or "syncservice" to set which transport to use.
     ```
-    $ export LH_TRANSPORT_TYPE=...
+    $ export TRANSPORT_TYPE=...
     ```
 If you chose Kafka for transport, set the following environment variables:
 
-1.  Set the `KAFKA_CONSUMER_ID` environment variable to hold the ID of the consumer.
+1. If you use secured (SSL/TLS) client authorization, set `KAFKA_SSL_CA` environment variable to hold the
+   certificate (PEM format) encoded in base64.
     ```
-    $ export KAFKA_CONSUMER_ID=...
+    $ export KAFKA_SSL_CA=$(cat PATH_TO_CA | base64 -w 0)
     ```
-
-1.  Set the `KAFKA_HOSTS` environment variable to hold the kafka bootstrap servers host.
-    ```
-    $ export KAFKA_HOSTS=...
-    ```
-
+    
 Otherwise, if you chose Sync-Service as transport, set the following:
 
 1.  Set the `SYNC_SERVICE_PORT` environment variable to hold the ESS port as was setup in the leaf hub.
