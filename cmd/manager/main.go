@@ -94,11 +94,10 @@ func createManager(transport transport.Transport, leaderElectionNamespace, metri
 		return nil, fmt.Errorf("failed to add spec syncers: %w", err)
 	}
 
-	err = mgr.Add(transport)
-	if err != nil {
+	if err = mgr.Add(transport); err != nil {
 		return nil, fmt.Errorf("failed to add transport: %w", err)
 	}
-
+	
 	return mgr, nil
 }
 
