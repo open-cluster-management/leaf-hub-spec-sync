@@ -51,6 +51,7 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundl
 		log:                 log,
 		client:              syncServiceClient,
 		pollingInterval:     pollingInterval,
+		bundlesMetaDataChan: make(chan *client.ObjectMetaData),
 		bundlesUpdatesChan:  bundleUpdatesChan,
 	}, nil
 }
@@ -96,8 +97,6 @@ func (s *SyncService) Start(stopChannel <-chan struct{}) error {
 	ctx, cancelContext := context.WithCancel(context.Background())
 	defer cancelContext()
 
-	s.bundlesMetaDataChan = make(chan *client.ObjectMetaData)
-	
 	go s.handleBundles(ctx)
 
 	for {
