@@ -16,9 +16,9 @@ import (
 
 var errRecievedUnsupportedBundleType = errors.New("received unsupported message type")
 
-// NewLHConsumer creates a new instance of LHConsumer.
-func NewLHConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) (*LHConsumer, error) {
-	kc := &LHConsumer{
+// NewConsumer creates a new instance of Consumer.
+func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) (*Consumer, error) {
+	kc := &Consumer{
 		kafkaConsumer:      nil,
 		commitsChan:        make(chan interface{}),
 		msgChan:            make(chan *kafka.Message),
@@ -41,8 +41,8 @@ func NewLHConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle
 	return kc, nil
 }
 
-// LHConsumer abstracts hub-of-hubs-kafka-transport kafka-consumer's generic usage.
-type LHConsumer struct {
+// Consumer abstracts hub-of-hubs-kafka-transport kafka-consumer's generic usage.
+type Consumer struct {
 	log                logr.Logger
 	kafkaConsumer      *kclient.KafkaConsumer
 	commitsChan        chan interface{}
@@ -58,8 +58,8 @@ type LHConsumer struct {
 	bundleToTrackerMap map[interface{}]uint32
 }
 
-// Start function starts LHConsumer.
-func (c *LHConsumer) Start() {
+// Start function starts Consumer.
+func (c *Consumer) Start() {
 	c.startOnce.Do(func() {
 		err := c.kafkaConsumer.Subscribe(c.log)
 		if err != nil {
@@ -82,28 +82,24 @@ func (c *LHConsumer) Start() {
 	})
 }
 
-// Stop function stops LHConsumer.
-func (c *LHConsumer) Stop() {
+// Stop function stops Consumer.
+func (c *Consumer) Stop() {
 	c.stopOnce.Do(func() {
 		c.kafkaConsumer.Close()
 		c.stopChan <- struct{}{}
 		close(c.msgChan)
 		close(c.stopChan)
 		close(c.commitsChan)
-
-		for k := range c.trackerToMsg {
-			delete(c.trackerToMsg, k)
-		}
 	})
 }
 
 // CommitAsync commits a transported message that was processed locally.
-func (c *LHConsumer) CommitAsync(bundle interface{}) {
+func (c *Consumer) CommitAsync(bundle interface{}) {
 	c.commitsChan <- bundle
 }
 
 // generateMessageId assigns a tracker to a message in order to commit it when needed.
-func (c *LHConsumer) generateMessageTracker(msg *kafka.Message) uint32 {
+func (c *Consumer) generateMessageTracker(msg *kafka.Message) uint32 {
 	/*
 		TODO: consider optimizing Tracker assignment and moving to uint16.
 			(commitMessage currently depends on incremental Tracker assignment)
@@ -114,7 +110,7 @@ func (c *LHConsumer) generateMessageTracker(msg *kafka.Message) uint32 {
 	return c.availableTracker - 1
 }
 
-func (c *LHConsumer) commitMessage(bundle interface{}) {
+func (c *Consumer) commitMessage(bundle interface{}) {
 	tracker := c.bundleToTrackerMap[bundle]
 	if tracker > c.committedTracker {
 		msg, exists := c.trackerToMsg[tracker]
@@ -122,8 +118,7 @@ func (c *LHConsumer) commitMessage(bundle interface{}) {
 			return
 		}
 
-		_, err := c.kafkaConsumer.Consumer().CommitMessage(msg)
-		if err != nil {
+		if _, err := c.kafkaConsumer.Consumer().CommitMessage(msg); err != nil {
 			// Schedule for retry.
 			// If a more recent msg gets committed before retry, then this message would be dropped.
 			c.commitsChan <- tracker
@@ -133,21 +128,17 @@ func (c *LHConsumer) commitMessage(bundle interface{}) {
 		delete(c.bundleToTrackerMap, bundle)
 		delete(c.trackerToMsg, tracker)
 		c.committedTracker = tracker
-	} else {
-		_, exists := c.trackerToMsg[tracker]
-		if exists {
-			// a more recent message was committed, drop current
-			delete(c.bundleToTrackerMap, bundle)
-			delete(c.trackerToMsg, tracker)
-		}
+	} else if _, exists := c.trackerToMsg[tracker]; exists {
+		// a more recent message was committed, drop current
+		delete(c.bundleToTrackerMap, bundle)
+		delete(c.trackerToMsg, tracker)
 	}
 }
 
-func (c *LHConsumer) processMessage(msg *kafka.Message) {
+func (c *Consumer) processMessage(msg *kafka.Message) {
 	transportMsg := &transport.Message{}
 
-	err := json.Unmarshal(msg.Value, transportMsg)
-	if err != nil {
+	if err := json.Unmarshal(msg.Value, transportMsg); err != nil {
 		c.log.Error(err, "failed to parse bundle", "ObjectId", msg.Key)
 		return
 	}
@@ -164,9 +155,8 @@ func (c *LHConsumer) processMessage(msg *kafka.Message) {
 	}
 }
 
-func (c *LHConsumer) handleBundle(bundleSkeleton *bundle.ObjectsBundle, msg *transport.Message) {
-	err := json.Unmarshal(msg.Payload, bundleSkeleton)
-	if err != nil {
+func (c *Consumer) handleBundle(bundleSkeleton *bundle.ObjectsBundle, msg *transport.Message) {
+	if err := json.Unmarshal(msg.Payload, bundleSkeleton); err != nil {
 		c.log.Error(err, "failed to parse bundle", "ObjectId", msg.ID)
 		return
 	}
