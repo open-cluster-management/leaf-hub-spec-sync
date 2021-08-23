@@ -104,12 +104,12 @@ func (c *Consumer) handleCommits(ctx context.Context) {
 			return
 
 		case offset := <-c.commitsChan:
-			c.commitTracker(offset)
+			c.commitOffset(offset)
 		}
 	}
 }
 
-func (c *Consumer) commitTracker(bundle interface{}) {
+func (c *Consumer) commitOffset(bundle interface{}) {
 	msg, exists := c.bundleToMsgMap[bundle]
 	if !exists {
 		return
