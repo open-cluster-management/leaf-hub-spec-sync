@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	github.com/confluentinc/confluent-kafka-go v1.7.0
-	github.com/go-logr/logr v1.0.0
+	github.com/go-logr/logr v0.2.1
 	github.com/open-cluster-management/hub-of-hubs-data-types v0.1.0
 	github.com/open-cluster-management/hub-of-hubs-kafka-transport v0.0.0-20210823122243-9e117a5f4f16
 	github.com/open-horizon/edge-sync-service-client v0.0.0-20190711093406-dc3a19905da2
@@ -17,6 +17,5 @@ require (
 )
 
 replace (
-	github.com/go-logr/logr => github.com/go-logr/logr v0.2.1
 	k8s.io/client-go => k8s.io/client-go v0.20.5
 )
