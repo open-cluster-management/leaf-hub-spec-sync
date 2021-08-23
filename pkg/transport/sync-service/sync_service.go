@@ -2,12 +2,12 @@ package syncservice
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
-	"sync"
 
 	"github.com/go-logr/logr"
 	datatypes "github.com/open-cluster-management/hub-of-hubs-data-types"
@@ -44,7 +44,6 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundl
 		pollingInterval:     pollingInterval,
 		bundlesMetaDataChan: make(chan *client.ObjectMetaData),
 		bundlesUpdatesChan:  bundleUpdatesChan,
-		stopChan:            make(chan struct{}, 1),
 	}, nil
 }
 
@@ -55,9 +54,6 @@ type SyncService struct {
 	pollingInterval     int
 	bundlesMetaDataChan chan *client.ObjectMetaData
 	bundlesUpdatesChan  chan *bundle.ObjectsBundle
-	stopChan            chan struct{}
-	startOnce           sync.Once
-	stopOnce            sync.Once
 }
 
 func readEnvVars() (string, string, uint16, int, error) {
@@ -96,32 +92,35 @@ func readEnvVars() (string, string, uint16, int, error) {
 	return protocol, host, uint16(port), pollingInterval, nil
 }
 
-// Start function starts sync service.
-func (s *SyncService) Start() {
-	s.startOnce.Do(func() {
-		go s.handleBundles()
-	})
-}
-
-// Stop function stops sync service.
-func (s *SyncService) Stop() {
-	s.stopOnce.Do(func() {
-		close(s.stopChan)
-		close(s.bundlesMetaDataChan)
-	})
-}
-
 // CommitAsync commits a transported message that was processed locally.
-func (s *SyncService) CommitAsync(bundle interface{}) {}
+func (s *SyncService) CommitAsync(_ interface{}) {}
 
-func (s *SyncService) handleBundles() {
+// Start function starts sync service.
+func (s *SyncService) Start(stopChannel <-chan struct{}) error {
+	ctx, cancelContext := context.WithCancel(context.Background())
+	defer cancelContext()
+
+	go s.handleBundles(ctx)
+
+	for {
+		<-stopChannel // blocking wait until getting stop event on the stop channel.
+		cancelContext()
+		close(s.bundlesMetaDataChan)
+		s.log.Info("stopped sync service")
+
+		return nil
+	}
+}
+
+func (s *SyncService) handleBundles(ctx context.Context) {
 	// register for updates for spec bundles and config objects, includes all types of spec bundles.
 	s.client.StartPollingForUpdates(datatypes.SpecBundle, s.pollingInterval, s.bundlesMetaDataChan)
 
 	for {
 		select {
-		case <-s.stopChan:
+		case <-ctx.Done():
 			return
+
 		case objectMetaData := <-s.bundlesMetaDataChan:
 			var buf bytes.Buffer
 			if !s.client.FetchObjectData(objectMetaData, &buf) {

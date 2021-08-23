@@ -101,9 +101,6 @@ func doMain() int {
 		return 1
 	}
 
-	transportObj.Start()
-	defer transportObj.Stop()
-
 	log.Info("Starting the Cmd.")
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
@@ -130,6 +127,10 @@ func createManager(leaderElectionNamespace, metricsHost string, metricsPort int3
 
 	if err := controller.AddSpecSyncers(mgr, bundleUpdatesChan, transport); err != nil {
 		return nil, fmt.Errorf("failed to add spec syncers: %w", err)
+	}
+
+	if err = mgr.Add(transport); err != nil {
+		return nil, fmt.Errorf("failed to add transport: %w", err)
 	}
 
 	return mgr, nil
