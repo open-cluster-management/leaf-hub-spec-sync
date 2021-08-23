@@ -1,10 +1,10 @@
 package kafkaclient
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/go-logr/logr"
@@ -14,21 +14,18 @@ import (
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
 )
 
-var errRecievedUnsupportedBundleType = errors.New("received unsupported message type")
+var errReceivedUnsupportedBundleType = errors.New("received unsupported message type")
 
 // NewConsumer creates a new instance of Consumer.
 func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) (*Consumer, error) {
 	kc := &Consumer{
+		log:                log,
 		kafkaConsumer:      nil,
 		commitsChan:        make(chan interface{}),
 		msgChan:            make(chan *kafka.Message),
 		bundlesUpdatesChan: bundleUpdatesChan,
-		stopChan:           make(chan struct{}, 1),
-		availableTracker:   1,
-		committedTracker:   0,
-		trackerToMsg:       make(map[uint32]*kafka.Message),
-		bundleToTrackerMap: make(map[interface{}]uint32),
-		log:                log,
+		committedOffset:    -1,
+		bundleToMsgMap:     make(map[interface{}]*kafka.Message),
 	}
 
 	kafkaConsumer, err := kclient.NewKafkaConsumer(kc.msgChan, log)
@@ -48,90 +45,95 @@ type Consumer struct {
 	commitsChan        chan interface{}
 	msgChan            chan *kafka.Message
 	bundlesUpdatesChan chan *bundle.ObjectsBundle
-	stopChan           chan struct{}
-	startOnce          sync.Once
-	stopOnce           sync.Once
 
-	availableTracker   uint32
-	committedTracker   uint32
-	trackerToMsg       map[uint32]*kafka.Message
-	bundleToTrackerMap map[interface{}]uint32
+	committedOffset int64
+	bundleToMsgMap  map[interface{}]*kafka.Message
 }
 
 // Start function starts Consumer.
-func (c *Consumer) Start() {
-	c.startOnce.Do(func() {
-		err := c.kafkaConsumer.Subscribe(c.log)
-		if err != nil {
-			c.log.Error(err, "failed to start kafka consumer: subscribe failed")
-			return
-		}
+func (c *Consumer) Start(stopChannel <-chan struct{}) error {
+	ctx, cancelContext := context.WithCancel(context.Background())
+	defer cancelContext()
 
-		go func() {
-			for {
-				select {
-				case tracker := <-c.commitsChan:
-					c.commitMessage(tracker)
-				case msg := <-c.msgChan:
-					c.processMessage(msg)
-				case <-c.stopChan:
-					return
-				}
-			}
-		}()
-	})
-}
+	err := c.kafkaConsumer.Subscribe()
+	if err != nil {
+		c.log.Error(err, "failed to start kafka consumer: subscribe failed")
+		return fmt.Errorf("failed to start consumer: %w", err)
+	}
 
-// Stop function stops Consumer.
-func (c *Consumer) Stop() {
-	c.stopOnce.Do(func() {
+	go c.handleCommits(ctx)
+	go c.handleKafkaMessages(ctx)
+
+	for {
+		<-stopChannel // blocking wait until getting stop event on the stop channel.
+		cancelContext()
+
 		c.kafkaConsumer.Close()
-		c.stopChan <- struct{}{}
 		close(c.msgChan)
-		close(c.stopChan)
 		close(c.commitsChan)
-	})
+
+		c.log.Info("stopped kafka consumer")
+
+		return nil
+	}
 }
 
-// CommitAsync commits a transported message that was processed locally.
+// CommitAsync commits a transported message that was processed locally (via tracker).
 func (c *Consumer) CommitAsync(bundle interface{}) {
 	c.commitsChan <- bundle
 }
 
-// generateMessageId assigns a tracker to a message in order to commit it when needed.
-func (c *Consumer) generateMessageTracker(msg *kafka.Message) uint32 {
-	/*
-		TODO: consider optimizing Tracker assignment and moving to uint16.
-			(commitMessage currently depends on incremental Tracker assignment)
-	*/
-	c.trackerToMsg[c.availableTracker] = msg
-	c.availableTracker++
+func (c *Consumer) handleKafkaMessages(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			c.log.Info("stopped kafka message handler")
+			return
 
-	return c.availableTracker - 1
+		case msg := <-c.msgChan:
+			c.processMessage(msg)
+		}
+	}
 }
 
-func (c *Consumer) commitMessage(bundle interface{}) {
-	tracker := c.bundleToTrackerMap[bundle]
-	if tracker > c.committedTracker {
-		msg, exists := c.trackerToMsg[tracker]
-		if !exists {
+func (c *Consumer) handleCommits(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			c.log.Info("stopped tracker committing handler")
 			return
-		}
 
+		case offset := <-c.commitsChan:
+			c.commitTracker(offset)
+		}
+	}
+}
+
+func (c *Consumer) commitTracker(bundle interface{}) {
+	msg, exists := c.bundleToMsgMap[bundle]
+	if !exists {
+		return
+	}
+
+	offset := int64(msg.TopicPartition.Offset)
+	if offset > c.committedOffset {
 		if _, err := c.kafkaConsumer.Consumer().CommitMessage(msg); err != nil {
-			// Schedule for retry.
-			// If a more recent msg gets committed before retry, then this message would be dropped.
-			c.commitsChan <- tracker
+			c.log.Info("transport failed to commit message", "topic", *msg.TopicPartition.Topic,
+				"partition", msg.TopicPartition.Partition,
+				"offset", offset)
+
 			return
 		}
 
-		delete(c.bundleToTrackerMap, bundle)
-		delete(c.trackerToMsg, tracker)
-		c.committedTracker = tracker
-	} else if _, exists := c.trackerToMsg[tracker]; exists {
+		delete(c.bundleToMsgMap, bundle)
+		c.committedOffset = offset
+		c.log.Info("transport committed message",
+			"topic", *msg.TopicPartition.Topic,
+			"partition", msg.TopicPartition.Partition,
+			"offset", offset)
+	} else {
 		// a more recent message was committed, drop current
-		delete(c.bundleToTrackerMap, bundle)
-		delete(c.trackerToMsg, tracker)
+		delete(c.bundleToMsgMap, bundle)
 	}
 }
 
@@ -139,27 +141,25 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 	transportMsg := &transport.Message{}
 
 	if err := json.Unmarshal(msg.Value, transportMsg); err != nil {
-		c.log.Error(err, "failed to parse bundle", "ObjectId", msg.Key)
+		c.log.Error(err, "failed to parse bundle", "message key", string(msg.Key))
 		return
 	}
-
-	c.log.Info("transport got bundle", "BundleID", transportMsg.ID, "ObjType", transportMsg.MsgType)
 
 	switch transportMsg.MsgType {
 	case datatypes.SpecBundle:
 		receivedBundle := &bundle.ObjectsBundle{}
-		c.bundleToTrackerMap[receivedBundle] = c.generateMessageTracker(msg)
-		c.handleBundle(receivedBundle, transportMsg)
+		c.bundleToMsgMap[receivedBundle] = msg
+
+		if err := json.Unmarshal(transportMsg.Payload, receivedBundle); err != nil {
+			c.log.Error(err, "failed to parse bundle",
+				"Object ID", transportMsg.ID,
+				"Message Key", string(msg.Key))
+
+			return
+		}
+
+		c.bundlesUpdatesChan <- receivedBundle
 	default:
-		c.log.Error(errRecievedUnsupportedBundleType, "MessageType", transportMsg.MsgType)
+		c.log.Error(errReceivedUnsupportedBundleType, "message type", transportMsg.MsgType)
 	}
-}
-
-func (c *Consumer) handleBundle(bundleSkeleton *bundle.ObjectsBundle, msg *transport.Message) {
-	if err := json.Unmarshal(msg.Payload, bundleSkeleton); err != nil {
-		c.log.Error(err, "failed to parse bundle", "ObjectId", msg.ID)
-		return
-	}
-
-	c.bundlesUpdatesChan <- bundleSkeleton
 }
