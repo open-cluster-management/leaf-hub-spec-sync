@@ -78,7 +78,7 @@ func (c *Consumer) Start(stopChannel <-chan struct{}) error {
 	}
 }
 
-// CommitAsync commits a transported message that was processed locally (via tracker).
+// CommitAsync commits a transported message that was processed locally.
 func (c *Consumer) CommitAsync(bundle interface{}) {
 	c.commitsChan <- bundle
 }
@@ -100,7 +100,7 @@ func (c *Consumer) handleCommits(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			c.log.Info("stopped tracker committing handler")
+			c.log.Info("stopped offset committing handler")
 			return
 
 		case offset := <-c.commitsChan:
