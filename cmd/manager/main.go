@@ -11,7 +11,7 @@ import (
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
-	kafka "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/kafka-client"
+	kafka "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/kafka"
 	lhSyncService "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/sync-service"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -44,7 +44,7 @@ func printVersion(log logr.Logger) {
 func getTransport(transportType string, bundleUpdatesChan chan *bundle.ObjectsBundle) (transport.Transport, error) {
 	switch transportType {
 	case kafkaTransportTypeName:
-		kafkaProducer, err := kafka.NewConsumer(ctrl.Log.WithName("kafka-client"), bundleUpdatesChan)
+		kafkaProducer, err := kafka.NewConsumer(ctrl.Log.WithName("kafka"), bundleUpdatesChan)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create kafka-consumer: %w", err)
 		}
@@ -58,7 +58,7 @@ func getTransport(transportType string, bundleUpdatesChan chan *bundle.ObjectsBu
 
 		return syncService, nil
 	default:
-		return nil, errEnvVarIllegalValue
+		return nil, fmt.Errorf("%w: %s", errEnvVarIllegalValue, transportType)
 	}
 }
 
@@ -91,9 +91,15 @@ func doMain() int {
 
 	transportObj, err := getTransport(transportType, bundleUpdatesChan)
 	if err != nil {
-		log.Error(err, "initialization error", "failed to initialize", transportType)
+		log.Error(err, "transport initialization error")
 		return 1
 	}
+
+	if err := transportObj.Start(); err != nil {
+		log.Error(err, "transport start failure")
+		return 1
+	}
+	defer transportObj.Stop()
 
 	mgr, err := createManager(leaderElectionNamespace, metricsHost, metricsPort, bundleUpdatesChan, transportObj)
 	if err != nil {
@@ -127,10 +133,6 @@ func createManager(leaderElectionNamespace, metricsHost string, metricsPort int3
 
 	if err := controller.AddSpecSyncers(mgr, bundleUpdatesChan, transport); err != nil {
 		return nil, fmt.Errorf("failed to add spec syncers: %w", err)
-	}
-
-	if err = mgr.Add(transport); err != nil {
-		return nil, fmt.Errorf("failed to add transport: %w", err)
 	}
 
 	return mgr, nil
