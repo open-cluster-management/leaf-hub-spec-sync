@@ -95,17 +95,17 @@ func doMain() int {
 		return 1
 	}
 
-	if err := transportObj.Start(); err != nil {
-		log.Error(err, "transport start failure")
-		return 1
-	}
-	defer transportObj.Stop()
-
 	mgr, err := createManager(leaderElectionNamespace, metricsHost, metricsPort, bundleUpdatesChan, transportObj)
 	if err != nil {
 		log.Error(err, "Failed to create manager")
 		return 1
 	}
+
+	if err := transportObj.Start(); err != nil {
+		log.Error(err, "transport start failure")
+		return 1
+	}
+	defer transportObj.Stop()
 
 	log.Info("Starting the Cmd.")
 
