@@ -100,11 +100,11 @@ spec:
             - name: TRANSPORT_TYPE
               value: "$TRANSPORT_TYPE"
             - name: KAFKA_CONSUMER_ID
-              value: "lh-spec-consumer"
+              value: "hub3"
             - name: KAFKA_CONSUMER_HOSTS
-              value: "my-cluster-kafka-tls-bootstrap-kafka.apps.veisenbe-hoh2.dev10.red-chesterfield.com:443"
+              value: "kafka-brokers-cluster-kafka-tls-bootstrap-kafka.apps.veisenbe-hoh2.dev10.red-chesterfield.com:443"
             - name: KAFKA_CONSUMER_TOPIC
-              value: "spec-path-topic"
+              value: "spec"
             - name: KAFKA_SSL_CA
               value: "$KAFKA_SSL_CA"
             - name: SYNC_SERVICE_PROTOCOL
