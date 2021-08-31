@@ -3,6 +3,7 @@
 # Leaf-Hub Spec Sync
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/open-cluster-management/leaf-hub-spec-sync)](https://goreportcard.com/report/github.com/open-cluster-management/leaf-hub-spec-sync)
+[![License](https://img.shields.io/github/license/open-cluster-management/leaf-hub-spec-sync)](/LICENSE)
 
 The leaf hub spec sync component of [Hub-of-Hubs](https://github.com/open-cluster-management/hub-of-hubs).
 
