@@ -1,0 +1,66 @@
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leaf-hub-spec-sync
+rules:
+  - verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+      - deletecollection
+    apiGroups:
+      - policy.open-cluster-management.io
+      - apps.open-cluster-management.io
+      - hub-of-hubs.open-cluster-management.io
+      - hive.openshift.io
+    resources:
+      - '*'
+  - verbs:
+      - get
+      - list
+      - watch
+    apiGroups:
+      - cluster.open-cluster-management.io
+    resources:
+      - managedclusters
+  - verbs:
+      - create
+    apiGroups:
+      - cluster.open-cluster-management.io
+    resources:
+      - managedclustersets
+      - managedclustersets/join
+  - verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    apiGroups:
+      - ''
+    resources:
+      - pods
+      - configmaps
+      - secrets
+      - events
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leaf-hub-spec-sync
+subjects:
+  - kind: ServiceAccount
+    name: leaf-hub-spec-sync
+    namespace: open-cluster-management
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: leaf-hub-spec-sync
