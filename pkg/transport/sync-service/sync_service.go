@@ -96,11 +96,16 @@ func readEnvVars() (string, string, uint16, int, error) {
 	return protocol, host, uint16(port), pollingInterval, nil
 }
 
+// CommitAsync commits a transported message that was processed locally.
+func (s *SyncService) CommitAsync(_ interface{}) {}
+
 // Start function starts sync service.
-func (s *SyncService) Start() {
+func (s *SyncService) Start() error {
 	s.startOnce.Do(func() {
 		go s.handleBundles()
 	})
+
+	return nil
 }
 
 // Stop function stops sync service.
