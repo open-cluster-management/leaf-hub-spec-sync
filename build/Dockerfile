@@ -30,5 +30,9 @@ RUN  /usr/local/scripts/user_setup
 RUN microdnf update && \
     microdnf clean all
 
+# allow user to fully control the bin directory (for transport certificates) -- for now
+RUN chown ${USER_UID}:0 /usr/local/bin
+RUN chmod 0775 /usr/local/bin
+
 USER ${USER_UID}
 ENTRYPOINT ["/usr/local/bin/manager"]
