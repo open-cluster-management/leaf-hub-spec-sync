@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller"
+	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
+	kafka "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/kafka"
 	lhSyncService "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/sync-service"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -20,16 +23,43 @@ import (
 )
 
 const (
-	metricsHost                     = "0.0.0.0"
-	metricsPort               int32 = 9435
-	envVarControllerNamespace       = "POD_NAMESPACE"
-	leaderElectionLockName          = "leaf-hub-spec-sync-lock"
+	metricsHost                        = "0.0.0.0"
+	metricsPort                  int32 = 9435
+	kafkaTransportTypeName             = "kafka"
+	syncServiceTransportTypeName       = "syncservice"
+	envVarControllerNamespace          = "POD_NAMESPACE"
+	envVarTransportType                = "TRANSPORT_TYPE"
+	leaderElectionLockName             = "leaf-hub-spec-sync-lock"
 )
+
+var errEnvVarIllegalValue = errors.New("environment variable illegal value")
 
 func printVersion(log logr.Logger) {
 	log.Info(fmt.Sprintf("Go Version: %s", runtime.Version()))
 	log.Info(fmt.Sprintf("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH))
 	log.Info(fmt.Sprintf("Version of operator-sdk: %v", sdkVersion.Version))
+}
+
+// function to choose transport type based on env var.
+func getTransport(transportType string, bundleUpdatesChan chan *bundle.ObjectsBundle) (transport.Transport, error) {
+	switch transportType {
+	case kafkaTransportTypeName:
+		kafkaConsumer, err := kafka.NewConsumer(ctrl.Log.WithName("kafka"), bundleUpdatesChan)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create kafka-consumer: %w", err)
+		}
+
+		return kafkaConsumer, nil
+	case syncServiceTransportTypeName:
+		syncService, err := lhSyncService.NewSyncService(ctrl.Log.WithName("sync-service"), bundleUpdatesChan)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create sync-service: %w", err)
+		}
+
+		return syncService, nil
+	default:
+		return nil, fmt.Errorf("%w: %s", errEnvVarIllegalValue, transportType)
+	}
 }
 
 // function to handle defers with exit, see https://stackoverflow.com/a/27629493/553720.
@@ -49,13 +79,19 @@ func doMain() int {
 		return 1
 	}
 
+	transportType, found := os.LookupEnv(envVarTransportType)
+	if !found {
+		log.Error(nil, "Not found:", "environment variable", envVarTransportType)
+		return 1
+	}
+
 	// transport layer initialization
 	bundleUpdatesChan := make(chan *bundle.ObjectsBundle)
 	defer close(bundleUpdatesChan)
 
-	syncService, err := lhSyncService.NewSyncService(ctrl.Log.WithName("sync-service"), bundleUpdatesChan)
+	transportObj, err := getTransport(transportType, bundleUpdatesChan)
 	if err != nil {
-		log.Error(err, "initialization error", "failed to initialize", "SyncService")
+		log.Error(err, "transport initialization error")
 		return 1
 	}
 
@@ -65,8 +101,11 @@ func doMain() int {
 		return 1
 	}
 
-	syncService.Start()
-	defer syncService.Stop()
+	if err := transportObj.Start(); err != nil {
+		log.Error(err, "transport start failure")
+		return 1
+	}
+	defer transportObj.Stop()
 
 	log.Info("Starting the Cmd.")
 
