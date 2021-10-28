@@ -3,6 +3,7 @@ package bundles
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -24,6 +25,7 @@ type LeafHubBundlesSpecSync struct {
 	clientWorkerJobChan chan *clientWorkerJob
 }
 
+// handlerFunc is a clientWorkerJob's handler function.
 type handlerFunc func(context.Context, client.Client, *unstructured.Unstructured)
 
 // clientWorkerJob holds the object than need to be processed and the flag to which defines
@@ -31,6 +33,7 @@ type handlerFunc func(context.Context, client.Client, *unstructured.Unstructured
 type clientWorkerJob struct {
 	handler handlerFunc
 	obj     *unstructured.Unstructured
+	wg      *sync.WaitGroup
 }
 
 // AddLeafHubBundlesSpecSync adds bundles spec syncer to the manager.
@@ -78,7 +81,7 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 		go syncer.runClientWorker(ctx, syncer.k8sClients[i])
 	}
 
-	syncer.sync()
+	go syncer.sync()
 
 	<-stopChannel // blocking wait for stop event
 	syncer.log.Info("stopped bundles syncer")
@@ -87,12 +90,16 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 }
 
 func (syncer *LeafHubBundlesSpecSync) sync() {
+	var wg sync.WaitGroup
+
 	syncer.log.Info("start bundles syncing...")
 
 	for {
 		receivedBundle := <-syncer.bundleUpdatesChan
 
 		nowUpdated := time.Now()
+
+		wg.Add(len(receivedBundle.Objects))
 
 		// send "update" jobs to client workers
 		for _, obj := range receivedBundle.Objects {
@@ -105,13 +112,17 @@ func (syncer *LeafHubBundlesSpecSync) sync() {
 						syncer.log.Info("object updated", "name", obj.GetName(), "namespace",
 							obj.GetNamespace(), "kind", obj.GetKind())
 					}
-				}, obj: obj,
+				}, obj: obj, wg: &wg,
 			}
 		}
+
+		wg.Wait()
 
 		updateDuration := time.Since(nowUpdated)
 
 		nowDeleted := time.Now()
+
+		wg.Add(len(receivedBundle.DeletedObjects))
 
 		// send "delete" jobs to client workers
 		for _, obj := range receivedBundle.DeletedObjects {
@@ -124,9 +135,11 @@ func (syncer *LeafHubBundlesSpecSync) sync() {
 						syncer.log.Info("object deleted", "name", obj.GetName(), "namespace",
 							obj.GetNamespace(), "kind", obj.GetKind())
 					}
-				}, obj: obj,
+				}, obj: obj, wg: &wg,
 			}
 		}
+
+		wg.Wait()
 
 		deleteDuration := time.Since(nowDeleted)
 
@@ -145,6 +158,7 @@ func (syncer *LeafHubBundlesSpecSync) runClientWorker(ctx context.Context, k8sCl
 
 		case job := <-syncer.clientWorkerJobChan: // handle the object
 			job.handler(ctx, k8sClient, job.obj)
+			job.wg.Done()
 		}
 	}
 }
