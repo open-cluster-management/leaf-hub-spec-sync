@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 
 	"github.com/go-logr/logr"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
@@ -20,10 +21,12 @@ import (
 )
 
 const (
-	metricsHost                     = "0.0.0.0"
-	metricsPort               int32 = 9435
-	envVarControllerNamespace       = "POD_NAMESPACE"
-	leaderElectionLockName          = "leaf-hub-spec-sync-lock"
+	metricsHost                              = "0.0.0.0"
+	metricsPort                        int32 = 9435
+	envVarControllerNamespace                = "POD_NAMESPACE"
+	envVarBundlesSyncerNumberOfClients       = "BUNDLES_SYNCER_NUMBER_OF_CLIENTS"
+	leaderElectionLockName                   = "leaf-hub-spec-sync-lock"
+	defaultNumberOfClients                   = 10
 )
 
 func printVersion(log logr.Logger) {
@@ -49,6 +52,18 @@ func doMain() int {
 		return 1
 	}
 
+	numOfClients := defaultNumberOfClients
+	envNumOfClients, found := os.LookupEnv(envVarBundlesSyncerNumberOfClients)
+
+	if found {
+		if value, err := strconv.Atoi(envNumOfClients); err != nil {
+			log.Info(fmt.Sprintf("Failed to convert environment variable '%s', value: %s, err: %s. Using default %d.",
+				envVarBundlesSyncerNumberOfClients, envNumOfClients, err, defaultNumberOfClients))
+		} else {
+			numOfClients = value
+		}
+	}
+
 	// transport layer initialization
 	bundleUpdatesChan := make(chan *bundle.ObjectsBundle)
 	defer close(bundleUpdatesChan)
@@ -59,7 +74,7 @@ func doMain() int {
 		return 1
 	}
 
-	mgr, err := createManager(leaderElectionNamespace, metricsHost, metricsPort, bundleUpdatesChan)
+	mgr, err := createManager(leaderElectionNamespace, metricsHost, metricsPort, bundleUpdatesChan, numOfClients)
 	if err != nil {
 		log.Error(err, "Failed to create manager")
 		return 1
@@ -79,7 +94,7 @@ func doMain() int {
 }
 
 func createManager(leaderElectionNamespace, metricsHost string, metricsPort int32,
-	bundleUpdatesChan chan *bundle.ObjectsBundle) (ctrl.Manager, error) {
+	bundleUpdatesChan chan *bundle.ObjectsBundle, numOfClients int) (ctrl.Manager, error) {
 	options := ctrl.Options{
 		MetricsBindAddress:      fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 		LeaderElection:          true,
@@ -92,7 +107,7 @@ func createManager(leaderElectionNamespace, metricsHost string, metricsPort int3
 		return nil, fmt.Errorf("failed to create a new manager: %w", err)
 	}
 
-	if err := controller.AddSpecSyncers(mgr, bundleUpdatesChan); err != nil {
+	if err := controller.AddSpecSyncers(mgr, bundleUpdatesChan, numOfClients); err != nil {
 		return nil, fmt.Errorf("failed to add spec syncers: %w", err)
 	}
 
