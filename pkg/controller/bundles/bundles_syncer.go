@@ -55,14 +55,14 @@ func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesC
 		k8sClients = append(k8sClients, k8sClient)
 	}
 
-	// create object data channel
-	clientWorkerJobsChan := make(chan *clientWorkerJob, numOfClients)
+	// create client workers job channel
+	clientWorkersJobChan := make(chan *clientWorkerJob, numOfClients)
 
 	if err := mgr.Add(&LeafHubBundlesSpecSync{
 		log:                  log,
 		bundleUpdatesChan:    bundleUpdatesChan,
 		k8sClients:           k8sClients,
-		clientWorkersJobChan: clientWorkerJobsChan,
+		clientWorkersJobChan: clientWorkersJobChan,
 	}); err != nil {
 		return fmt.Errorf("failed to add bundles spec syncer - %w", err)
 	}
