@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
@@ -94,8 +93,6 @@ func (syncer *LeafHubBundlesSpecSync) sync() {
 	for {
 		receivedBundle := <-syncer.bundleUpdatesChan
 
-		nowUpdated := time.Now()
-
 		syncer.clientWorkersWG.Add(len(receivedBundle.Objects))
 
 		// send "update" jobs to client workers
@@ -106,10 +103,6 @@ func (syncer *LeafHubBundlesSpecSync) sync() {
 		// ensure all updates have finished before processing DeletedObjects objects
 		syncer.clientWorkersWG.Wait()
 
-		updateDuration := time.Since(nowUpdated)
-
-		nowDeleted := time.Now()
-
 		syncer.clientWorkersWG.Add(len(receivedBundle.DeletedObjects))
 
 		// send "delete" jobs to client workers
@@ -119,12 +112,6 @@ func (syncer *LeafHubBundlesSpecSync) sync() {
 
 		// ensure all deletes have finished before receiving next bundle
 		syncer.clientWorkersWG.Wait()
-
-		deleteDuration := time.Since(nowDeleted)
-
-		syncer.log.Info("multiple go routines", fmt.Sprintf("%d objects updated", len(receivedBundle.Objects)),
-			fmt.Sprintf("%d ms", updateDuration.Milliseconds()), fmt.Sprintf("%d objects deleted",
-				len(receivedBundle.DeletedObjects)), fmt.Sprintf("%d ms", deleteDuration.Milliseconds()))
 	}
 }
 
@@ -132,7 +119,6 @@ func (syncer *LeafHubBundlesSpecSync) runClientWorker(ctx context.Context, k8sCl
 	for {
 		select {
 		case <-ctx.Done(): // we have received a signal to stop
-			close(syncer.clientWorkersJobChan)
 			return
 
 		case job := <-syncer.clientWorkersJobChan: // handle the object
