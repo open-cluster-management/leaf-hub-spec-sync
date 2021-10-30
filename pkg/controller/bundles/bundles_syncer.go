@@ -100,7 +100,7 @@ func (syncer *LeafHubBundlesSpecSync) sync() {
 
 		// send "update" jobs to client workers
 		for _, obj := range receivedBundle.Objects {
-			syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.handleUpdate, obj: obj}
+			syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.updateObject, obj: obj}
 		}
 
 		// ensure all updates have finished before processing DeletedObjects objects
@@ -114,7 +114,7 @@ func (syncer *LeafHubBundlesSpecSync) sync() {
 
 		// send "delete" jobs to client workers
 		for _, obj := range receivedBundle.DeletedObjects {
-			syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.handleDelete, obj: obj}
+			syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.deleteObject, obj: obj}
 		}
 
 		// ensure all deletes have finished before receiving next bundle
@@ -142,7 +142,7 @@ func (syncer *LeafHubBundlesSpecSync) runClientWorker(ctx context.Context, k8sCl
 	}
 }
 
-func (syncer *LeafHubBundlesSpecSync) handleUpdate(ctx context.Context, k8sClient client.Client,
+func (syncer *LeafHubBundlesSpecSync) updateObject(ctx context.Context, k8sClient client.Client,
 	obj *unstructured.Unstructured) {
 	if err := helpers.UpdateObject(ctx, k8sClient, obj); err != nil {
 		syncer.log.Error(err, "failed to update object", "name", obj.GetName(),
@@ -153,7 +153,7 @@ func (syncer *LeafHubBundlesSpecSync) handleUpdate(ctx context.Context, k8sClien
 	}
 }
 
-func (syncer *LeafHubBundlesSpecSync) handleDelete(ctx context.Context, k8sClient client.Client,
+func (syncer *LeafHubBundlesSpecSync) deleteObject(ctx context.Context, k8sClient client.Client,
 	obj *unstructured.Unstructured) {
 	if deleted, err := helpers.DeleteObject(ctx, k8sClient, obj); err != nil {
 		syncer.log.Error(err, "failed to delete object", "name", obj.GetName(),
