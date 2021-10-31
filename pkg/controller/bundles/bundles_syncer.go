@@ -16,11 +16,11 @@ import (
 
 // LeafHubBundlesSpecSync syncs bundles spec objects.
 type LeafHubBundlesSpecSync struct {
-	log                  logr.Logger
-	bundleUpdatesChan    chan *bundle.ObjectsBundle
-	k8sClients           []client.Client
-	clientWorkersJobChan chan *clientWorkerJob
-	clientWorkersWG      sync.WaitGroup
+	log                    logr.Logger
+	bundleUpdatesChan      chan *bundle.ObjectsBundle
+	k8sClients             []client.Client
+	clientWorkersJobChan   chan *clientWorkerJob
+	clientWorkersWaitGroup sync.WaitGroup
 }
 
 // handlerFunc is a clientWorkerJob's handler function.
@@ -43,7 +43,7 @@ func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesC
 	}
 
 	// prepare k8s clients
-	k8sClients := make([]client.Client, 0)
+	k8sClients := make([]client.Client, numOfClients)
 
 	for i := 0; i < numOfClients; i++ {
 		k8sClient, err := client.New(config, client.Options{})
@@ -51,7 +51,7 @@ func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesC
 			return fmt.Errorf("failed to initialize k8s client - %w", err)
 		}
 
-		k8sClients = append(k8sClients, k8sClient)
+		k8sClients[i] = k8sClient
 	}
 
 	// create client workers job channel
@@ -79,7 +79,7 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 		go syncer.runClientWorker(ctx, syncer.k8sClients[i])
 	}
 
-	go syncer.sync()
+	go syncer.sync(ctx)
 
 	<-stopChannel // blocking wait for stop event
 	syncer.log.Info("stopped bundles syncer")
@@ -87,31 +87,35 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 	return nil
 }
 
-func (syncer *LeafHubBundlesSpecSync) sync() {
+func (syncer *LeafHubBundlesSpecSync) sync(ctx context.Context) {
 	syncer.log.Info("start bundles syncing...")
 
 	for {
-		receivedBundle := <-syncer.bundleUpdatesChan
+		select {
+		case <-ctx.Done(): // we have received a signal to stop
+			return
 
-		syncer.clientWorkersWG.Add(len(receivedBundle.Objects))
+		case receivedBundle := <-syncer.bundleUpdatesChan: // handle the bundle
+			syncer.clientWorkersWaitGroup.Add(len(receivedBundle.Objects))
 
-		// send "update" jobs to client workers
-		for _, obj := range receivedBundle.Objects {
-			syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.updateObject, obj: obj}
+			// send "update" jobs to client workers
+			for _, obj := range receivedBundle.Objects {
+				syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.updateObject, obj: obj}
+			}
+
+			// ensure all updates have finished before processing DeletedObjects objects
+			syncer.clientWorkersWaitGroup.Wait()
+
+			syncer.clientWorkersWaitGroup.Add(len(receivedBundle.DeletedObjects))
+
+			// send "delete" jobs to client workers
+			for _, obj := range receivedBundle.DeletedObjects {
+				syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.deleteObject, obj: obj}
+			}
+
+			// ensure all deletes have finished before receiving next bundle
+			syncer.clientWorkersWaitGroup.Wait()
 		}
-
-		// ensure all updates have finished before processing DeletedObjects objects
-		syncer.clientWorkersWG.Wait()
-
-		syncer.clientWorkersWG.Add(len(receivedBundle.DeletedObjects))
-
-		// send "delete" jobs to client workers
-		for _, obj := range receivedBundle.DeletedObjects {
-			syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.deleteObject, obj: obj}
-		}
-
-		// ensure all deletes have finished before receiving next bundle
-		syncer.clientWorkersWG.Wait()
 	}
 }
 
@@ -123,7 +127,7 @@ func (syncer *LeafHubBundlesSpecSync) runClientWorker(ctx context.Context, k8sCl
 
 		case job := <-syncer.clientWorkersJobChan: // handle the object
 			job.handler(ctx, k8sClient, job.obj)
-			syncer.clientWorkersWG.Done()
+			syncer.clientWorkersWaitGroup.Done()
 		}
 	}
 }

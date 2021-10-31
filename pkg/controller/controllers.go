@@ -10,8 +10,8 @@ import (
 
 // AddSpecSyncers adds the controllers that get updates from transport layer and apply/delete CRs to the Manager.
 func AddSpecSyncers(mgr ctrl.Manager, bundleUpdatesChan chan *bundle.ObjectsBundle, numOfClients int) error {
-	err := bundles.AddLeafHubBundlesSpecSync(ctrl.Log.WithName("bundles-syncer"), mgr, bundleUpdatesChan, numOfClients)
-	if err != nil {
+	if err := bundles.AddLeafHubBundlesSpecSync(ctrl.Log.WithName("bundles-syncer"), mgr, bundleUpdatesChan,
+		numOfClients); err != nil {
 		return fmt.Errorf("failed to add bundles spec syncer: %w", err)
 	}
 

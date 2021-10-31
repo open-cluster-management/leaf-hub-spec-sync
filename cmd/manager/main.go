@@ -53,12 +53,11 @@ func doMain() int {
 	}
 
 	numOfClients := defaultNumberOfClients
-	envNumOfClients, found := os.LookupEnv(envVarBundlesSyncerNumberOfClients)
 
-	if found {
+	if envNumOfClients, found := os.LookupEnv(envVarBundlesSyncerNumberOfClients); found {
 		if value, err := strconv.Atoi(envNumOfClients); err != nil {
-			log.Info(fmt.Sprintf("Failed to convert environment variable '%s', value: %s, err: %s. Using default %d.",
-				envVarBundlesSyncerNumberOfClients, envNumOfClients, err, defaultNumberOfClients))
+			log.Error(err, fmt.Sprintf("Failed to convert environment variable '%s', value: %s. Using default %d.",
+				envVarBundlesSyncerNumberOfClients, envNumOfClients, defaultNumberOfClients))
 		} else {
 			numOfClients = value
 		}
