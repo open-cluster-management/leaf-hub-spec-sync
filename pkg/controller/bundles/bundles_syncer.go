@@ -97,7 +97,6 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 
 func readK8sPoolSizeEnvVar(log logr.Logger) int {
 	envK8sClientsPoolSize, found := os.LookupEnv(envVarK8sClientsPoolSize)
-
 	if !found {
 		log.Info("readK8sPoolSizeEnvVar", fmt.Sprintf("env variable %s not found", envVarK8sClientsPoolSize),
 			fmt.Sprintf("using default value %d", defaultK8sClientsPoolSize))
