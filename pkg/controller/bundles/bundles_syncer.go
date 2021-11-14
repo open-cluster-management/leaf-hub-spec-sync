@@ -3,6 +3,8 @@ package bundles
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"sync"
 
 	"github.com/go-logr/logr"
@@ -14,11 +16,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	envVarK8sClientsPoolSize  = "K8S_CLIENTS_POOL_SIZE"
+	defaultK8sClientsPoolSize = 10
+)
+
 // LeafHubBundlesSpecSync syncs bundles spec objects.
 type LeafHubBundlesSpecSync struct {
 	log                    logr.Logger
 	bundleUpdatesChan      chan *bundle.ObjectsBundle
-	k8sClients             []client.Client
+	k8sClientsPool         []client.Client
 	clientWorkersJobChan   chan *clientWorkerJob
 	clientWorkersWaitGroup sync.WaitGroup
 }
@@ -34,33 +41,34 @@ type clientWorkerJob struct {
 }
 
 // AddLeafHubBundlesSpecSync adds bundles spec syncer to the manager.
-func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan *bundle.ObjectsBundle,
-	numOfClients int) error {
+func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan *bundle.ObjectsBundle) error {
+	k8sClientsPoolSize := readK8sPoolSizeEnvVar(log)
+
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get in cluster kubeconfig - %w", err)
 	}
 
-	// prepare k8s clients
-	k8sClients := make([]client.Client, numOfClients)
+	// prepare k8s clients pool
+	k8sClientsPool := make([]client.Client, k8sClientsPoolSize)
 
-	for i := 0; i < numOfClients; i++ {
+	for i := 0; i < k8sClientsPoolSize; i++ {
 		k8sClient, err := client.New(config, client.Options{})
 		if err != nil {
 			return fmt.Errorf("failed to initialize k8s client - %w", err)
 		}
 
-		k8sClients[i] = k8sClient
+		k8sClientsPool[i] = k8sClient
 	}
 
 	// create client workers job channel
-	clientWorkersJobChan := make(chan *clientWorkerJob, numOfClients)
+	clientWorkersJobChan := make(chan *clientWorkerJob, k8sClientsPoolSize)
 
 	if err := mgr.Add(&LeafHubBundlesSpecSync{
 		log:                  log,
 		bundleUpdatesChan:    bundleUpdatesChan,
-		k8sClients:           k8sClients,
+		k8sClientsPool:       k8sClientsPool,
 		clientWorkersJobChan: clientWorkersJobChan,
 	}); err != nil {
 		return fmt.Errorf("failed to add bundles spec syncer - %w", err)
@@ -75,8 +83,8 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 	defer cancelContext()
 
 	// start workers
-	for i := 0; i < len(syncer.k8sClients); i++ {
-		go syncer.runClientWorker(ctx, syncer.k8sClients[i])
+	for i := 0; i < len(syncer.k8sClientsPool); i++ {
+		go syncer.runClientWorker(ctx, syncer.k8sClientsPool[i])
 	}
 
 	go syncer.sync(ctx)
@@ -85,6 +93,26 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 	syncer.log.Info("stopped bundles syncer")
 
 	return nil
+}
+
+func readK8sPoolSizeEnvVar(log logr.Logger) int {
+	k8sClientsPoolSize, found := os.LookupEnv(envVarK8sClientsPoolSize)
+	if !found {
+		log.Info(fmt.Sprintf("env variable %s not found, using default value %d", envVarK8sClientsPoolSize,
+			defaultK8sClientsPoolSize))
+
+		return defaultK8sClientsPoolSize
+	}
+
+	value, err := strconv.Atoi(k8sClientsPoolSize)
+	if err != nil || value < 1 {
+		log.Info(fmt.Sprintf("env var %s invalid value: %s, using default value %d", envVarK8sClientsPoolSize,
+			k8sClientsPoolSize, defaultK8sClientsPoolSize))
+
+		return defaultK8sClientsPoolSize
+	}
+
+	return value
 }
 
 func (syncer *LeafHubBundlesSpecSync) sync(ctx context.Context) {
@@ -96,24 +124,19 @@ func (syncer *LeafHubBundlesSpecSync) sync(ctx context.Context) {
 			return
 
 		case receivedBundle := <-syncer.bundleUpdatesChan: // handle the bundle
-			syncer.clientWorkersWaitGroup.Add(len(receivedBundle.Objects))
+			syncer.clientWorkersWaitGroup.Add(len(receivedBundle.Objects) + len(receivedBundle.DeletedObjects))
 
 			// send "update" jobs to client workers
 			for _, obj := range receivedBundle.Objects {
 				syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.updateObject, obj: obj}
 			}
 
-			// ensure all updates have finished before processing DeletedObjects objects
-			syncer.clientWorkersWaitGroup.Wait()
-
-			syncer.clientWorkersWaitGroup.Add(len(receivedBundle.DeletedObjects))
-
 			// send "delete" jobs to client workers
 			for _, obj := range receivedBundle.DeletedObjects {
 				syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.deleteObject, obj: obj}
 			}
 
-			// ensure all deletes have finished before receiving next bundle
+			// ensure all updates and deletes have finished before receiving next bundle
 			syncer.clientWorkersWaitGroup.Wait()
 		}
 	}

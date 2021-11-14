@@ -46,6 +46,13 @@ Go to the [Contributing guide](CONTRIBUTING.md) to learn how to get involved.
     ```
     $ export SYNC_SERVICE_PORT=...
     ```
+
+1.  Set the `K8S_CLIENTS_POOL_SIZE` environment variable to hold the size of the k8s clients pool.
+    The pool is used to run update and delete operations of the received bundle's objects concurrently.
+    The environment variable is optional. Default value is 10. 
+    ```
+    $ export K8S_CLIENTS_POOL_SIZE=...
+    ```
     
 1.  Run the following command to deploy the `leaf-hub-spec-sync` to your leaf hub cluster:  
     ```

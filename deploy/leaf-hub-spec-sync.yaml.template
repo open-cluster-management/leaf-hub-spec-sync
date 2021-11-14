@@ -107,8 +107,8 @@ spec:
               value: "$SYNC_SERVICE_PORT"
             - name: SYNC_SERVICE_POLLING_INTERVAL
               value: "5"
-            - name: BUNDLES_SYNCER_NUMBER_OF_CLIENTS
-              value: "$BUNDLES_SYNCER_NUMBER_OF_CLIENTS"
+            - name: K8S_CLIENTS_POOL_SIZE
+              value: "$K8S_CLIENTS_POOL_SIZE"
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
