@@ -96,18 +96,18 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 }
 
 func readK8sPoolSizeEnvVar(log logr.Logger) int {
-	envK8sClientsPoolSize, found := os.LookupEnv(envVarK8sClientsPoolSize)
+	k8sClientsPoolSize, found := os.LookupEnv(envVarK8sClientsPoolSize)
 	if !found {
-		log.Info("readK8sPoolSizeEnvVar", fmt.Sprintf("env variable %s not found", envVarK8sClientsPoolSize),
-			fmt.Sprintf("using default value %d", defaultK8sClientsPoolSize))
+		log.Info(fmt.Sprintf("env variable %s not found, using default value %d", envVarK8sClientsPoolSize,
+			defaultK8sClientsPoolSize))
 
 		return defaultK8sClientsPoolSize
 	}
 
-	value, err := strconv.Atoi(envK8sClientsPoolSize)
-	if err != nil {
-		log.Info("readK8sPoolSizeEnvVar", fmt.Sprintf("failed to convert variable %s, value: %s",
-			envVarK8sClientsPoolSize, envK8sClientsPoolSize), fmt.Sprintf("using default value %d", defaultK8sClientsPoolSize))
+	value, err := strconv.Atoi(k8sClientsPoolSize)
+	if err != nil || value < 1 {
+		log.Info(fmt.Sprintf("env var %s invalid value: %s, using default value %d", envVarK8sClientsPoolSize,
+			k8sClientsPoolSize, defaultK8sClientsPoolSize))
 
 		return defaultK8sClientsPoolSize
 	}
