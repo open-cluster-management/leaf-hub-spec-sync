@@ -47,6 +47,10 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 	ctx, cancelContext := context.WithCancel(context.Background())
 	defer cancelContext()
 
+	if err := syncer.k8sWorkerPool.Start(); err != nil {
+		return fmt.Errorf("failed to start bundles spec syncer - %w", err)
+	}
+
 	go syncer.sync(ctx)
 
 	<-stopChannel // blocking wait for stop event

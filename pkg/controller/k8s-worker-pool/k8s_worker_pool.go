@@ -71,7 +71,7 @@ func (pool *K8sWorkerPool) Start() error {
 	for i := 1; i <= pool.poolSize; i++ {
 		worker, err := newK8sWorker(pool.log, i, pool.kubeConfig, pool.jobsQueue)
 		if err != nil {
-			return fmt.Errorf("falied to start k8s workers pool - %w", err)
+			return fmt.Errorf("failed to start k8s workers pool - %w", err)
 		}
 
 		worker.start(pool.ctx)
