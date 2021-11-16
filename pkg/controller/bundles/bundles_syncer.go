@@ -3,73 +3,30 @@ package bundles
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"sync"
 
 	"github.com/go-logr/logr"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller/helpers"
+	k8sworkerpool "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	envVarK8sClientsPoolSize  = "K8S_CLIENTS_POOL_SIZE"
-	defaultK8sClientsPoolSize = 10
-)
-
-// LeafHubBundlesSpecSync syncs bundles spec objects.
-type LeafHubBundlesSpecSync struct {
-	log                    logr.Logger
-	bundleUpdatesChan      chan *bundle.ObjectsBundle
-	k8sClientsPool         []client.Client
-	clientWorkersJobChan   chan *clientWorkerJob
-	clientWorkersWaitGroup sync.WaitGroup
-}
-
-// handlerFunc is a clientWorkerJob's handler function.
-type handlerFunc func(context.Context, client.Client, *unstructured.Unstructured)
-
-// clientWorkerJob holds the object than need to be processed and the flag to which defines
-// whether object need to be updated or delete.
-type clientWorkerJob struct {
-	handler handlerFunc
-	obj     *unstructured.Unstructured
-}
-
 // AddLeafHubBundlesSpecSync adds bundles spec syncer to the manager.
 func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan *bundle.ObjectsBundle) error {
-	k8sClientsPoolSize := readK8sPoolSizeEnvVar(log)
-
-	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
+	// create k8s worker pool
+	k8sWorkerPool, err := k8sworkerpool.NewK8sWorkerPool(log)
 	if err != nil {
-		return fmt.Errorf("failed to get in cluster kubeconfig - %w", err)
+		return fmt.Errorf("failed to initialize bundle spec syncer - %w", err)
 	}
-
-	// prepare k8s clients pool
-	k8sClientsPool := make([]client.Client, k8sClientsPoolSize)
-
-	for i := 0; i < k8sClientsPoolSize; i++ {
-		k8sClient, err := client.New(config, client.Options{})
-		if err != nil {
-			return fmt.Errorf("failed to initialize k8s client - %w", err)
-		}
-
-		k8sClientsPool[i] = k8sClient
-	}
-
-	// create client workers job channel
-	clientWorkersJobChan := make(chan *clientWorkerJob, k8sClientsPoolSize)
 
 	if err := mgr.Add(&LeafHubBundlesSpecSync{
-		log:                  log,
-		bundleUpdatesChan:    bundleUpdatesChan,
-		k8sClientsPool:       k8sClientsPool,
-		clientWorkersJobChan: clientWorkersJobChan,
+		log:                          log,
+		bundleUpdatesChan:            bundleUpdatesChan,
+		k8sWorkerPool:                k8sWorkerPool,
+		bundleProcessingWaitingGroup: sync.WaitGroup{},
 	}); err != nil {
 		return fmt.Errorf("failed to add bundles spec syncer - %w", err)
 	}
@@ -77,14 +34,22 @@ func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesC
 	return nil
 }
 
+// LeafHubBundlesSpecSync syncs bundles spec objects.
+type LeafHubBundlesSpecSync struct {
+	log                          logr.Logger
+	bundleUpdatesChan            chan *bundle.ObjectsBundle
+	k8sWorkerPool                *k8sworkerpool.K8sWorkerPool
+	bundleProcessingWaitingGroup sync.WaitGroup
+}
+
 // Start function starts bundles spec syncer.
 func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 	ctx, cancelContext := context.WithCancel(context.Background())
 	defer cancelContext()
+	defer syncer.k8sWorkerPool.Stop() // verify that if pool start fails at any point it will get cleaned
 
-	// start workers
-	for i := 0; i < len(syncer.k8sClientsPool); i++ {
-		go syncer.runClientWorker(ctx, syncer.k8sClientsPool[i])
+	if err := syncer.k8sWorkerPool.Start(); err != nil {
+		return fmt.Errorf("failed to start bundles spec syncer - %w", err)
 	}
 
 	go syncer.sync(ctx)
@@ -93,26 +58,6 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 	syncer.log.Info("stopped bundles syncer")
 
 	return nil
-}
-
-func readK8sPoolSizeEnvVar(log logr.Logger) int {
-	k8sClientsPoolSize, found := os.LookupEnv(envVarK8sClientsPoolSize)
-	if !found {
-		log.Info(fmt.Sprintf("env variable %s not found, using default value %d", envVarK8sClientsPoolSize,
-			defaultK8sClientsPoolSize))
-
-		return defaultK8sClientsPoolSize
-	}
-
-	value, err := strconv.Atoi(k8sClientsPoolSize)
-	if err != nil || value < 1 {
-		log.Info(fmt.Sprintf("env var %s invalid value: %s, using default value %d", envVarK8sClientsPoolSize,
-			k8sClientsPoolSize, defaultK8sClientsPoolSize))
-
-		return defaultK8sClientsPoolSize
-	}
-
-	return value
 }
 
 func (syncer *LeafHubBundlesSpecSync) sync(ctx context.Context) {
@@ -124,33 +69,25 @@ func (syncer *LeafHubBundlesSpecSync) sync(ctx context.Context) {
 			return
 
 		case receivedBundle := <-syncer.bundleUpdatesChan: // handle the bundle
-			syncer.clientWorkersWaitGroup.Add(len(receivedBundle.Objects) + len(receivedBundle.DeletedObjects))
-
-			// send "update" jobs to client workers
+			syncer.bundleProcessingWaitingGroup.Add(len(receivedBundle.Objects) + len(receivedBundle.DeletedObjects))
+			// send k8s jobs to workers to update objects
 			for _, obj := range receivedBundle.Objects {
-				syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.updateObject, obj: obj}
+				syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(obj, func(ctx context.Context,
+					k8sClient client.Client, obj *unstructured.Unstructured) {
+					syncer.updateObject(ctx, k8sClient, obj)
+					syncer.bundleProcessingWaitingGroup.Done()
+				}))
 			}
-
-			// send "delete" jobs to client workers
+			// send k8s jobs to workers to delete objects
 			for _, obj := range receivedBundle.DeletedObjects {
-				syncer.clientWorkersJobChan <- &clientWorkerJob{handler: syncer.deleteObject, obj: obj}
+				syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(obj, func(ctx context.Context,
+					k8sClient client.Client, obj *unstructured.Unstructured) {
+					syncer.deleteObject(ctx, k8sClient, obj)
+					syncer.bundleProcessingWaitingGroup.Done()
+				}))
 			}
-
-			// ensure all updates and deletes have finished before receiving next bundle
-			syncer.clientWorkersWaitGroup.Wait()
-		}
-	}
-}
-
-func (syncer *LeafHubBundlesSpecSync) runClientWorker(ctx context.Context, k8sClient client.Client) {
-	for {
-		select {
-		case <-ctx.Done(): // we have received a signal to stop
-			return
-
-		case job := <-syncer.clientWorkersJobChan: // handle the object
-			job.handler(ctx, k8sClient, job.obj)
-			syncer.clientWorkersWaitGroup.Done()
+			// ensure all updates and deletes have finished before reading next bundle
+			syncer.bundleProcessingWaitingGroup.Wait()
 		}
 	}
 }
@@ -158,21 +95,21 @@ func (syncer *LeafHubBundlesSpecSync) runClientWorker(ctx context.Context, k8sCl
 func (syncer *LeafHubBundlesSpecSync) updateObject(ctx context.Context, k8sClient client.Client,
 	obj *unstructured.Unstructured) {
 	if err := helpers.UpdateObject(ctx, k8sClient, obj); err != nil {
-		syncer.log.Error(err, "failed to update object", "name", obj.GetName(),
-			"namespace", obj.GetNamespace(), "kind", obj.GetKind())
-	} else {
-		syncer.log.Info("object updated", "name", obj.GetName(), "namespace",
+		syncer.log.Error(err, "failed to update object", "name", obj.GetName(), "namespace",
 			obj.GetNamespace(), "kind", obj.GetKind())
+	} else {
+		syncer.log.Info("object updated", "name", obj.GetName(), "namespace", obj.GetNamespace(),
+			"kind", obj.GetKind())
 	}
 }
 
 func (syncer *LeafHubBundlesSpecSync) deleteObject(ctx context.Context, k8sClient client.Client,
 	obj *unstructured.Unstructured) {
 	if deleted, err := helpers.DeleteObject(ctx, k8sClient, obj); err != nil {
-		syncer.log.Error(err, "failed to delete object", "name", obj.GetName(),
-			"namespace", obj.GetNamespace(), "kind", obj.GetKind())
-	} else if deleted {
-		syncer.log.Info("object deleted", "name", obj.GetName(), "namespace",
+		syncer.log.Error(err, "failed to delete object", "name", obj.GetName(), "namespace",
 			obj.GetNamespace(), "kind", obj.GetKind())
+	} else if deleted {
+		syncer.log.Info("object deleted", "name", obj.GetName(), "namespace", obj.GetNamespace(),
+			"kind", obj.GetKind())
 	}
 }
