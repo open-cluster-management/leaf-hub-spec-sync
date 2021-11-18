@@ -14,15 +14,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// AddLeafHubBundlesSpecSync adds bundles spec syncer to the manager.
-func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan *bundle.ObjectsBundle) error {
+// AddBundleSpecSync adds BundleSpecSync to the manager.
+func AddBundleSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan *bundle.ObjectsBundle) error {
 	// create k8s worker pool
 	k8sWorkerPool, err := k8sworkerpool.NewK8sWorkerPool(log)
 	if err != nil {
 		return fmt.Errorf("failed to initialize bundle spec syncer - %w", err)
 	}
 
-	if err := mgr.Add(&LeafHubBundlesSpecSync{
+	if err := mgr.Add(&BundleSpecSync{
 		log:                          log,
 		bundleUpdatesChan:            bundleUpdatesChan,
 		k8sWorkerPool:                k8sWorkerPool,
@@ -34,8 +34,8 @@ func AddLeafHubBundlesSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesC
 	return nil
 }
 
-// LeafHubBundlesSpecSync syncs bundles spec objects.
-type LeafHubBundlesSpecSync struct {
+// BundleSpecSync syncs objects spec from received bundles.
+type BundleSpecSync struct {
 	log                          logr.Logger
 	bundleUpdatesChan            chan *bundle.ObjectsBundle
 	k8sWorkerPool                *k8sworkerpool.K8sWorkerPool
@@ -43,7 +43,7 @@ type LeafHubBundlesSpecSync struct {
 }
 
 // Start function starts bundles spec syncer.
-func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
+func (syncer *BundleSpecSync) Start(stopChannel <-chan struct{}) error {
 	ctx, cancelContext := context.WithCancel(context.Background())
 	defer cancelContext()
 	defer syncer.k8sWorkerPool.Stop() // verify that if pool start fails at any point it will get cleaned
@@ -60,7 +60,7 @@ func (syncer *LeafHubBundlesSpecSync) Start(stopChannel <-chan struct{}) error {
 	return nil
 }
 
-func (syncer *LeafHubBundlesSpecSync) sync(ctx context.Context) {
+func (syncer *BundleSpecSync) sync(ctx context.Context) {
 	syncer.log.Info("start bundles syncing...")
 
 	for {
@@ -92,7 +92,7 @@ func (syncer *LeafHubBundlesSpecSync) sync(ctx context.Context) {
 	}
 }
 
-func (syncer *LeafHubBundlesSpecSync) updateObject(ctx context.Context, k8sClient client.Client,
+func (syncer *BundleSpecSync) updateObject(ctx context.Context, k8sClient client.Client,
 	obj *unstructured.Unstructured) {
 	if err := helpers.UpdateObject(ctx, k8sClient, obj); err != nil {
 		syncer.log.Error(err, "failed to update object", "name", obj.GetName(), "namespace",
@@ -103,7 +103,7 @@ func (syncer *LeafHubBundlesSpecSync) updateObject(ctx context.Context, k8sClien
 	}
 }
 
-func (syncer *LeafHubBundlesSpecSync) deleteObject(ctx context.Context, k8sClient client.Client,
+func (syncer *BundleSpecSync) deleteObject(ctx context.Context, k8sClient client.Client,
 	obj *unstructured.Unstructured) {
 	if deleted, err := helpers.DeleteObject(ctx, k8sClient, obj); err != nil {
 		syncer.log.Error(err, "failed to delete object", "name", obj.GetName(), "namespace",
