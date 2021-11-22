@@ -59,7 +59,7 @@ func doMain() int {
 		return 1
 	}
 
-	mgr, err := createManager(leaderElectionNamespace, metricsHost, metricsPort, bundleUpdatesChan)
+	mgr, err := createManager(leaderElectionNamespace, bundleUpdatesChan)
 	if err != nil {
 		log.Error(err, "Failed to create manager")
 		return 1
@@ -78,8 +78,7 @@ func doMain() int {
 	return 0
 }
 
-func createManager(leaderElectionNamespace, metricsHost string, metricsPort int32,
-	bundleUpdatesChan chan *bundle.ObjectsBundle) (ctrl.Manager, error) {
+func createManager(leaderElectionNamespace string, bundleUpdatesChan chan *bundle.ObjectsBundle) (ctrl.Manager, error) {
 	options := ctrl.Options{
 		MetricsBindAddress:      fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 		LeaderElection:          true,
