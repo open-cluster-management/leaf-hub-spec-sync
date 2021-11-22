@@ -26,7 +26,7 @@ const (
 	metricsHost                        = "0.0.0.0"
 	metricsPort                  int32 = 9435
 	kafkaTransportTypeName             = "kafka"
-	syncServiceTransportTypeName       = "syncservice"
+	syncServiceTransportTypeName       = "sync-service"
 	envVarControllerNamespace          = "POD_NAMESPACE"
 	envVarTransportType                = "TRANSPORT_TYPE"
 	leaderElectionLockName             = "leaf-hub-spec-sync-lock"

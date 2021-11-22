@@ -106,7 +106,7 @@ spec:
             - name: KAFKA_CONSUMER_ID
               value: "$LH_ID"
             - name: KAFKA_CONSUMER_HOSTS
-              value: "kafka-brokers-cluster-kafka-tls-bootstrap-kafka.apps.veisenbe-hoh2.dev10.red-chesterfield.com:443"
+              value: "kafka-brokers-cluster-kafka-tls-bootstrap-kafka.apps.veisenbe-hoh3.dev10.red-chesterfield.com:443"
             - name: KAFKA_CONSUMER_TOPIC
               value: "spec"
             - name: KAFKA_SSL_CA

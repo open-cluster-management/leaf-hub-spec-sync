@@ -29,42 +29,42 @@ The leaf hub spec sync component of [Hub-of-Hubs](https://github.com/open-cluste
 
 ## Deploy on a leaf hub
 
-1.  Set the `REGISTRY` environment variable to hold the name of your docker registry:
+1. Set the `REGISTRY` environment variable to hold the name of your docker registry:
     ```
     $ export REGISTRY=...
     ```
     
-1.  Set the `IMAGE` environment variable to hold the name of the image.
+1. Set the `IMAGE` environment variable to hold the name of the image.
 
     ```
     $ export IMAGE=$REGISTRY/$(basename $(pwd)):latest
     ```
 
-1. Set the `TRANSPORT_TYPE` environment variable to "kafka" or "syncservice" to set which transport to use.
+1. Set the `LH_ID` environment variable to hold the leaf hub unique id to be used as consumer group name.
+   ```
+   $ export LH_ID=...
+   ``` 
+    
+1. Set the `TRANSPORT_TYPE` environment variable to "kafka" or "sync-service" to set which transport to use.
     ```
     $ export TRANSPORT_TYPE=...
     ```
-1. If you chose Kafka for transport, set the following environment variables:
-
-    1. Set the `LH_ID` environment variable to hold the leaf hub unique id to be used as consumer group name.
-    ```
-    $ export LH_ID=...
-    ``` 
-   
-    2. If you use secured (SSL/TLS) client authorization, set `KAFKA_SSL_CA` environment variable to hold the
+1. If you set Kafka for transport, set the following environment variables:
+ 
+    1. If you use secured (SSL/TLS) client authorization, set `KAFKA_SSL_CA` environment variable to hold the
        certificate (PEM format) encoded in base64.
     ```
     $ export KAFKA_SSL_CA=$(cat PATH_TO_CA | base64 -w 0)
     ```
 
-1. Otherwise, if you chose Sync-Service as transport, set the following:
+1. Otherwise, if you set Sync-Service as transport, set the following:
 
     1. Set the `SYNC_SERVICE_PORT` environment variable to hold the ESS port as was setup in the leaf hub.
         ```
         $ export SYNC_SERVICE_PORT=...
         ```
     
-1.  Run the following command to deploy the `leaf-hub-spec-sync` to your leaf hub cluster:  
+1. Run the following command to deploy the `leaf-hub-spec-sync` to your leaf hub cluster:  
     ```
     envsubst < deploy/leaf-hub-spec-sync.yaml.template | kubectl apply -f -
     ```
