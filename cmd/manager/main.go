@@ -9,7 +9,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller"
-	lhSyncService "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/sync-service"
+	syncservice "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/sync-service"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 	"github.com/spf13/pflag"
@@ -53,7 +53,7 @@ func doMain() int {
 	bundleUpdatesChan := make(chan *bundle.ObjectsBundle)
 	defer close(bundleUpdatesChan)
 
-	syncService, err := lhSyncService.NewSyncService(ctrl.Log.WithName("sync-service"), bundleUpdatesChan)
+	syncService, err := syncservice.NewSyncService(ctrl.Log.WithName("sync-service"), bundleUpdatesChan)
 	if err != nil {
 		log.Error(err, "initialization error", "failed to initialize", "SyncService")
 		return 1
