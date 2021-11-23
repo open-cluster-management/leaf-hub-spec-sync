@@ -132,19 +132,13 @@ func (s *SyncService) handleBundles() {
 		case objectMetaData := <-s.bundlesMetaDataChan:
 			var buf bytes.Buffer
 			if !s.client.FetchObjectData(objectMetaData, &buf) {
-				s.log.Error(errSyncServiceReadFailed, "failed to read bundle from sync service",
-					"object id", objectMetaData.ObjectID, "object type", objectMetaData.ObjectType,
-					"object version", objectMetaData.Version, "object description", objectMetaData.Description)
-
+				s.logObjectError(errSyncServiceReadFailed, "failed to read bundle from sync service", objectMetaData)
 				continue
 			}
 
 			tokens := strings.Split(objectMetaData.Description, ":") // obj desc is Content-Encoding:type
 			if len(tokens) != compressionHeaderTokensLength {
-				s.log.Error(errMissingCompressionType, "object id", objectMetaData.ObjectID,
-					"object type", objectMetaData.ObjectType, "object version", objectMetaData.Version,
-					"object description", objectMetaData.Description)
-
+				s.logObjectError(errMissingCompressionType, "missing compression header", objectMetaData)
 				continue
 			}
 
@@ -152,30 +146,27 @@ func (s *SyncService) handleBundles() {
 
 			uncompressedPayload, err := s.decompressPayload(buf.Bytes(), msgCompressorType)
 			if err != nil {
-				s.log.Error(err, "failed to decompress bundle bytes", "object id", objectMetaData.ObjectID,
-					"object type", objectMetaData.ObjectType, "object version", objectMetaData.Version,
-					"object description", objectMetaData.Description)
-
+				s.logObjectError(err, "failed to decompress bundle bytes", objectMetaData)
 				continue
 			}
 
 			receivedBundle := &bundle.ObjectsBundle{}
 			if err := json.Unmarshal(uncompressedPayload, receivedBundle); err != nil {
-				s.log.Error(err, "failed to parse bundle", "object id", objectMetaData.ObjectID,
-					"object type", objectMetaData.ObjectType, "object version", objectMetaData.Version,
-					"object description", objectMetaData.Description)
-
+				s.logObjectError(err, "failed to parse bundle", objectMetaData)
 				continue
 			}
 
 			s.bundlesUpdatesChan <- receivedBundle
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
-				s.log.Error(err, "failed to report object received to sync service",
-					"object id", objectMetaData.ObjectID, "object type", objectMetaData.ObjectType,
-					"object version", objectMetaData.Version, "object description", objectMetaData.Description)
+				s.logObjectError(err, "failed to report object received to sync service", objectMetaData)
 			}
 		}
 	}
+}
+
+func (s *SyncService) logObjectError(err error, errMsg string, objectMetaData *client.ObjectMetaData) {
+	s.log.Error(err, errMsg, "object id", objectMetaData.ObjectID, "object type", objectMetaData.ObjectType,
+		"object version", objectMetaData.Version, "object description", objectMetaData.Description)
 }
 
 func (s *SyncService) decompressPayload(payload []byte, msgCompressorType string) ([]byte, error) {
