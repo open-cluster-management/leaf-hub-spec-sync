@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/go-logr/logr"
 	datatypes "github.com/open-cluster-management/hub-of-hubs-data-types"
+	compressor "github.com/open-cluster-management/hub-of-hubs-message-compression"
+	"github.com/open-cluster-management/hub-of-hubs-message-compression/compressors"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-horizon/edge-sync-service-client/client"
 )
@@ -27,18 +30,6 @@ var (
 	errSyncServiceReadFailed = errors.New("sync service error")
 )
 
-// SyncService abstracts Sync Service client.
-type SyncService struct {
-	log                 logr.Logger
-	client              *client.SyncServiceClient
-	pollingInterval     int
-	bundlesMetaDataChan chan *client.ObjectMetaData
-	bundlesUpdatesChan  chan *bundle.ObjectsBundle
-	stopChan            chan struct{}
-	startOnce           sync.Once
-	stopOnce            sync.Once
-}
-
 // NewSyncService creates a new instance of SyncService.
 func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) (*SyncService, error) {
 	serverProtocol, host, port, pollingInterval, err := readEnvVars()
@@ -53,6 +44,7 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundl
 	return &SyncService{
 		log:                 log,
 		client:              syncServiceClient,
+		compressorsMap:      make(map[string]compressors.Compressor),
 		pollingInterval:     pollingInterval,
 		bundlesMetaDataChan: make(chan *client.ObjectMetaData),
 		bundlesUpdatesChan:  bundleUpdatesChan,
@@ -96,11 +88,29 @@ func readEnvVars() (string, string, uint16, int, error) {
 	return protocol, host, uint16(port), pollingInterval, nil
 }
 
+// SyncService abstracts Sync Service client.
+type SyncService struct {
+	log                 logr.Logger
+	client              *client.SyncServiceClient
+	compressorsMap      map[string]compressors.Compressor
+	pollingInterval     int
+	bundlesMetaDataChan chan *client.ObjectMetaData
+	bundlesUpdatesChan  chan *bundle.ObjectsBundle
+	stopChan            chan struct{}
+	startOnce           sync.Once
+	stopOnce            sync.Once
+}
+
+// CommitAsync commits a transported message that was processed locally.
+func (s *SyncService) CommitAsync(_ interface{}) {}
+
 // Start function starts sync service.
-func (s *SyncService) Start() {
+func (s *SyncService) Start() error {
 	s.startOnce.Do(func() {
 		go s.handleBundles()
 	})
+
+	return nil
 }
 
 // Stop function stops sync service.
@@ -127,8 +137,16 @@ func (s *SyncService) handleBundles() {
 				continue
 			}
 
+			msgCompressorType := strings.Split(objectMetaData.Description, ":")[1] // obj desc is compression-type:type
+
+			uncompressedPayload, err := s.decompressPayload(buf.Bytes(), msgCompressorType)
+			if err != nil {
+				s.log.Error(err, "failed to decompress bundle bytes", "ObjectId", objectMetaData.ObjectID)
+				continue
+			}
+
 			receivedBundle := &bundle.ObjectsBundle{}
-			if err := json.Unmarshal(buf.Bytes(), receivedBundle); err != nil {
+			if err := json.Unmarshal(uncompressedPayload, receivedBundle); err != nil {
 				s.log.Error(err, "failed to parse bundle", "ObjectId", objectMetaData.ObjectID)
 				continue
 			}
@@ -139,4 +157,24 @@ func (s *SyncService) handleBundles() {
 			}
 		}
 	}
+}
+
+func (s *SyncService) decompressPayload(payload []byte, msgCompressorType string) ([]byte, error) {
+	msgCompressor, found := s.compressorsMap[msgCompressorType]
+	if !found {
+		newCompressor, err := compressor.NewCompressor(compressor.CompressionType(msgCompressorType))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create compressor: %w", err)
+		}
+
+		msgCompressor = newCompressor
+		s.compressorsMap[msgCompressorType] = msgCompressor
+	}
+
+	uncompressedBytes, err := msgCompressor.Decompress(payload)
+	if err != nil {
+		return nil, fmt.Errorf("%w", err)
+	}
+
+	return uncompressedBytes, nil
 }
