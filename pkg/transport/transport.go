@@ -5,7 +5,7 @@ type Transport interface {
 	// CommitAsync marks a transported bundle as received (or its offset).
 	CommitAsync(interface{})
 	// Start starts the transport.
-	Start() error
+	Start()
 	// Stop stops the transport.
 	Stop()
 }

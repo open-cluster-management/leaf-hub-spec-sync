@@ -93,10 +93,7 @@ func doMain() int {
 		return 1
 	}
 
-	if err := transportObj.Start(); err != nil {
-		log.Error(err, "transport start failure")
-		return 1
-	}
+	transportObj.Start()
 	defer transportObj.Stop()
 
 	log.Info("Starting the Cmd.")

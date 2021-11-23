@@ -23,11 +23,13 @@ const (
 	envVarSyncServiceHost            = "SYNC_SERVICE_HOST"
 	envVarSyncServicePort            = "SYNC_SERVICE_PORT"
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
+	compressionHeaderTokensLength    = 2
 )
 
 var (
-	errEnvVarNotFound        = errors.New("not found environment variable")
-	errSyncServiceReadFailed = errors.New("sync service error")
+	errEnvVarNotFound         = errors.New("environment variable not found")
+	errMissingCompressionType = errors.New("compression type is missing from message description")
+	errSyncServiceReadFailed  = errors.New("sync service error")
 )
 
 // NewSyncService creates a new instance of SyncService.
@@ -105,12 +107,10 @@ type SyncService struct {
 func (s *SyncService) CommitAsync(_ interface{}) {}
 
 // Start function starts sync service.
-func (s *SyncService) Start() error {
+func (s *SyncService) Start() {
 	s.startOnce.Do(func() {
 		go s.handleBundles()
 	})
-
-	return nil
 }
 
 // Stop function stops sync service.
@@ -133,27 +133,46 @@ func (s *SyncService) handleBundles() {
 			var buf bytes.Buffer
 			if !s.client.FetchObjectData(objectMetaData, &buf) {
 				s.log.Error(errSyncServiceReadFailed, "failed to read bundle from sync service",
-					"ObjectId", objectMetaData.ObjectID)
+					"object id", objectMetaData.ObjectID, "object type", objectMetaData.ObjectType,
+					"object version", objectMetaData.Version, "object description", objectMetaData.Description)
+
 				continue
 			}
 
-			msgCompressorType := strings.Split(objectMetaData.Description, ":")[1] // obj desc is compression-type:type
+			tokens := strings.Split(objectMetaData.Description, ":") // obj desc is Content-Encoding:type
+			if len(tokens) != compressionHeaderTokensLength {
+				s.log.Error(errMissingCompressionType, "object id", objectMetaData.ObjectID,
+					"object type", objectMetaData.ObjectType, "object version", objectMetaData.Version,
+					"object description", objectMetaData.Description)
+
+				continue
+			}
+
+			msgCompressorType := tokens[1]
 
 			uncompressedPayload, err := s.decompressPayload(buf.Bytes(), msgCompressorType)
 			if err != nil {
-				s.log.Error(err, "failed to decompress bundle bytes", "ObjectId", objectMetaData.ObjectID)
+				s.log.Error(err, "failed to decompress bundle bytes", "object id", objectMetaData.ObjectID,
+					"object type", objectMetaData.ObjectType, "object version", objectMetaData.Version,
+					"object description", objectMetaData.Description)
+
 				continue
 			}
 
 			receivedBundle := &bundle.ObjectsBundle{}
 			if err := json.Unmarshal(uncompressedPayload, receivedBundle); err != nil {
-				s.log.Error(err, "failed to parse bundle", "ObjectId", objectMetaData.ObjectID)
+				s.log.Error(err, "failed to parse bundle", "object id", objectMetaData.ObjectID,
+					"object type", objectMetaData.ObjectType, "object version", objectMetaData.Version,
+					"object description", objectMetaData.Description)
+
 				continue
 			}
 
 			s.bundlesUpdatesChan <- receivedBundle
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
-				s.log.Error(err, "failed to report object received to sync service")
+				s.log.Error(err, "failed to report object received to sync service",
+					"object id", objectMetaData.ObjectID, "object type", objectMetaData.ObjectType,
+					"object version", objectMetaData.Version, "object description", objectMetaData.Description)
 			}
 		}
 	}
@@ -171,10 +190,10 @@ func (s *SyncService) decompressPayload(payload []byte, msgCompressorType string
 		s.compressorsMap[msgCompressorType] = msgCompressor
 	}
 
-	uncompressedBytes, err := msgCompressor.Decompress(payload)
+	decompressedBytes, err := msgCompressor.Decompress(payload)
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, fmt.Errorf("failed to decompress message: %w", err)
 	}
 
-	return uncompressedBytes, nil
+	return decompressedBytes, nil
 }
