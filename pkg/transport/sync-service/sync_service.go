@@ -44,13 +44,14 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundl
 	syncServiceClient.SetAppKeyAndSecret("user@myorg", "")
 
 	return &SyncService{
-		log:                 log,
-		client:              syncServiceClient,
-		compressorsMap:      make(map[string]compressors.Compressor),
-		pollingInterval:     pollingInterval,
-		bundlesMetaDataChan: make(chan *client.ObjectMetaData),
-		bundlesUpdatesChan:  bundleUpdatesChan,
-		stopChan:            make(chan struct{}, 1),
+		log:                       log,
+		client:                    syncServiceClient,
+		compressorsMap:            make(map[string]compressors.Compressor),
+		pollingInterval:           pollingInterval,
+		bundlesMetaDataChan:       make(chan *client.ObjectMetaData),
+		bundlesUpdatesChan:        bundleUpdatesChan,
+		bundleToObjectMetadataMap: make(map[*bundle.ObjectsBundle]*client.ObjectMetaData),
+		stopChan:                  make(chan struct{}, 1),
 	}, nil
 }
 
@@ -92,19 +93,28 @@ func readEnvVars() (string, string, uint16, int, error) {
 
 // SyncService abstracts Sync Service client.
 type SyncService struct {
-	log                 logr.Logger
-	client              *client.SyncServiceClient
-	compressorsMap      map[string]compressors.Compressor
-	pollingInterval     int
-	bundlesMetaDataChan chan *client.ObjectMetaData
-	bundlesUpdatesChan  chan *bundle.ObjectsBundle
-	stopChan            chan struct{}
-	startOnce           sync.Once
-	stopOnce            sync.Once
+	log                       logr.Logger
+	client                    *client.SyncServiceClient
+	compressorsMap            map[string]compressors.Compressor
+	pollingInterval           int
+	bundlesMetaDataChan       chan *client.ObjectMetaData
+	bundlesUpdatesChan        chan *bundle.ObjectsBundle
+	bundleToObjectMetadataMap map[*bundle.ObjectsBundle]*client.ObjectMetaData
+	stopChan                  chan struct{}
+	startOnce                 sync.Once
+	stopOnce                  sync.Once
 }
 
 // CommitAsync commits a transported message that was processed locally.
-func (s *SyncService) CommitAsync(_ interface{}) {}
+func (s *SyncService) CommitAsync(bundle *bundle.ObjectsBundle) {
+	if objectMetadata, found := s.bundleToObjectMetadataMap[bundle]; found {
+		if err := s.client.MarkObjectConsumed(objectMetadata); err != nil {
+			s.logError(err, "failed to mark object as consumed", objectMetadata)
+		}
+
+		delete(s.bundleToObjectMetadataMap, bundle)
+	}
+}
 
 // Start function starts sync service.
 func (s *SyncService) Start() {
@@ -132,13 +142,13 @@ func (s *SyncService) handleBundles() {
 		case objectMetaData := <-s.bundlesMetaDataChan:
 			var buf bytes.Buffer
 			if !s.client.FetchObjectData(objectMetaData, &buf) {
-				s.logObjectError(errSyncServiceReadFailed, "failed to read bundle from sync service", objectMetaData)
+				s.logError(errSyncServiceReadFailed, "failed to read bundle from sync service", objectMetaData)
 				continue
 			}
 
 			tokens := strings.Split(objectMetaData.Description, ":") // obj desc is Content-Encoding:type
 			if len(tokens) != compressionHeaderTokensLength {
-				s.logObjectError(errMissingCompressionType, "missing compression header", objectMetaData)
+				s.logError(errMissingCompressionType, "missing compression header", objectMetaData)
 				continue
 			}
 
@@ -146,25 +156,27 @@ func (s *SyncService) handleBundles() {
 
 			uncompressedPayload, err := s.decompressPayload(buf.Bytes(), msgCompressorType)
 			if err != nil {
-				s.logObjectError(err, "failed to decompress bundle bytes", objectMetaData)
+				s.logError(err, "failed to decompress bundle bytes", objectMetaData)
 				continue
 			}
 
 			receivedBundle := &bundle.ObjectsBundle{}
 			if err := json.Unmarshal(uncompressedPayload, receivedBundle); err != nil {
-				s.logObjectError(err, "failed to parse bundle", objectMetaData)
+				s.logError(err, "failed to parse bundle", objectMetaData)
 				continue
 			}
 
+			s.bundleToObjectMetadataMap[receivedBundle] = objectMetaData
 			s.bundlesUpdatesChan <- receivedBundle
+
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
-				s.logObjectError(err, "failed to report object received to sync service", objectMetaData)
+				s.logError(err, "failed to report object received to sync service", objectMetaData)
 			}
 		}
 	}
 }
 
-func (s *SyncService) logObjectError(err error, errMsg string, objectMetaData *client.ObjectMetaData) {
+func (s *SyncService) logError(err error, errMsg string, objectMetaData *client.ObjectMetaData) {
 	s.log.Error(err, errMsg, "object id", objectMetaData.ObjectID, "object type", objectMetaData.ObjectType,
 		"object version", objectMetaData.Version, "object description", objectMetaData.Description)
 }
