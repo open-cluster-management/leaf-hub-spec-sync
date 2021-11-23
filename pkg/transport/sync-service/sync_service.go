@@ -146,22 +146,20 @@ func (s *SyncService) handleBundles() {
 				continue
 			}
 
-			tokens := strings.Split(objectMetaData.Description, ":") // obj desc is Content-Encoding:type
-			if len(tokens) != compressionHeaderTokensLength {
+			compressionTokens := strings.Split(objectMetaData.Description, ":") // obj desc is Content-Encoding:type
+			if len(compressionTokens) != compressionHeaderTokensLength {
 				s.logError(errMissingCompressionType, "missing compression header", objectMetaData)
 				continue
 			}
 
-			msgCompressorType := tokens[1]
-
-			uncompressedPayload, err := s.decompressPayload(buf.Bytes(), msgCompressorType)
+			decompressedPayload, err := s.decompressPayload(buf.Bytes(), compressionTokens[1])
 			if err != nil {
 				s.logError(err, "failed to decompress bundle bytes", objectMetaData)
 				continue
 			}
 
 			receivedBundle := &bundle.ObjectsBundle{}
-			if err := json.Unmarshal(uncompressedPayload, receivedBundle); err != nil {
+			if err := json.Unmarshal(decompressedPayload, receivedBundle); err != nil {
 				s.logError(err, "failed to parse bundle", objectMetaData)
 				continue
 			}
