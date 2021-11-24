@@ -52,7 +52,7 @@ RUN  /usr/local/scripts/user_setup
 RUN microdnf update && \
     microdnf clean all
 
-# allow user to fully control the bin directory (for transport certificates) -- for now
+# allow user to fully control the bin directory (for transport certificates)
 RUN mkdir /opt/kafka
 RUN chown ${USER_UID}:0 /opt/kafka
 RUN chmod 0775 /opt/kafka

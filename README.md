@@ -37,6 +37,11 @@ Go to the [Contributing guide](CONTRIBUTING.md) to learn how to get involved.
     $ export REGISTRY=...
     ```
 
+1.  Set the `IMAGE` environment variable to hold the name of the image.
+    ```
+    $ export IMAGE=$REGISTRY/$(basename $(pwd)):latest
+    ```
+    
 1. Set the `LH_ID` environment variable to hold the leaf hub unique id.
    ```
    $ export LH_ID=...
@@ -46,21 +51,20 @@ Go to the [Contributing guide](CONTRIBUTING.md) to learn how to get involved.
     ```
     $ export TRANSPORT_TYPE=...
     ```
-1. If you set Kafka for transport, set the following environment variables:
+1. If you set kafka for transport, set the following environment variables:
     1. Set `KAFKA_BOOTSTRAP_SERVERS` environment variable to hold the
        address of the brokers to connect to.
     ```
     $ export KAFKA_BOOTSTRAP_SERVERS=...
     ```
 
-    1. If you use secured (SSL/TLS) client authorization, set `KAFKA_SSL_CA` environment variable to hold the
+    1. If you use secure (SSL/TLS) client authorization, set `KAFKA_SSL_CA` environment variable to hold the
        certificate (PEM format) encoded in base64.
     ```
     $ export KAFKA_SSL_CA=$(cat PATH_TO_CA | base64 -w 0)
     ```
 
-1. Otherwise, if you set Sync-Service as transport, set the following:
-
+1. Otherwise, if you set sync-service as transport, set the following:
     1. Set the `SYNC_SERVICE_PORT` environment variable to hold the ESS port as was setup in the leaf hub.
     ```
     $ export SYNC_SERVICE_PORT=...
