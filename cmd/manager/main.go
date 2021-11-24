@@ -11,6 +11,7 @@ import (
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
+	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/kafka"
 	syncservice "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/sync-service"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -25,6 +26,7 @@ const (
 	metricsHost                        = "0.0.0.0"
 	metricsPort                  int32 = 9435
 	envVarControllerNamespace          = "POD_NAMESPACE"
+	kafkaTransportTypeName             = "kafka"
 	syncServiceTransportTypeName       = "sync-service"
 	envVarTransportType                = "TRANSPORT_TYPE"
 	leaderElectionLockName             = "leaf-hub-spec-sync-lock"
@@ -41,6 +43,13 @@ func printVersion(log logr.Logger) {
 // function to choose transport type based on env var.
 func getTransport(transportType string, bundleUpdatesChan chan *bundle.ObjectsBundle) (transport.Transport, error) {
 	switch transportType {
+	case kafkaTransportTypeName:
+		kafkaConsumer, err := kafka.NewConsumer(ctrl.Log.WithName("kafka"), bundleUpdatesChan)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create kafka-consumer: %w", err)
+		}
+
+		return kafkaConsumer, nil
 	case syncServiceTransportTypeName:
 		syncService, err := syncservice.NewSyncService(ctrl.Log.WithName("sync-service"), bundleUpdatesChan)
 		if err != nil {
