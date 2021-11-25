@@ -51,7 +51,7 @@ Go to the [Contributing guide](CONTRIBUTING.md) to learn how to get involved.
     ```
     $ export TRANSPORT_TYPE=...
     ```
-1. If you set kafka for transport, set the following environment variables:
+1. If you set kafka as transport, set the following environment variables:
     1. Set `KAFKA_BOOTSTRAP_SERVERS` environment variable to hold the
        address of the brokers to connect to.
     ```
