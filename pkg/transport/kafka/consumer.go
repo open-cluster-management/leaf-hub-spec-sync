@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -27,7 +26,7 @@ const (
 	envVarKafkaBootstrapServers = "KAFKA_BOOTSTRAP_SERVERS"
 	envVarKafkaSSLCA            = "KAFKA_SSL_CA"
 	envVarKafkaTopic            = "KAFKA_TOPIC"
-	commitRescheduleDelay       = time.Second * 20
+	committerInterval           = time.Second * 20
 )
 
 var (
@@ -38,7 +37,7 @@ var (
 
 // NewConsumer creates a new instance of Consumer.
 func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) (*Consumer, error) {
-	kafkaConfigMap, topics, err := readEnvVars()
+	kafkaConfigMap, topic, err := readEnvVars()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
@@ -51,44 +50,43 @@ func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) 
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
 
-	if err := kafkaConsumer.Subscribe(topics); err != nil {
+	if err := kafkaConsumer.Subscribe([]string{topic}); err != nil {
 		close(msgChan)
 		kafkaConsumer.Close()
 
-		return nil, fmt.Errorf("failed to subscribe to requested topics - %v: %w", topics, err)
+		return nil, fmt.Errorf("failed to subscribe to requested topic - %v: %w", topic, err)
 	}
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	return &Consumer{
-		log:                             log,
-		kafkaConsumer:                   kafkaConsumer,
-		compressorsMap:                  make(map[compressor.CompressionType]compressors.Compressor),
-		commitsChan:                     make(chan *kafka.Message),
-		commitsRetryChan:                make(chan *kafka.Message),
-		msgChan:                         msgChan,
-		bundlesUpdatesChan:              bundleUpdatesChan,
-		partitionIDToCommittedOffsetMap: make(map[int32]kafka.Offset),
-		bundleToMsgMap:                  make(map[*bundle.ObjectsBundle]*kafka.Message),
-		ctx:                             ctx,
-		cancelFunc:                      cancelFunc,
+		log:                          log,
+		kafkaConsumer:                kafkaConsumer,
+		compressorsMap:               make(map[compressor.CompressionType]compressors.Compressor),
+		topic:                        topic,
+		msgChan:                      msgChan,
+		bundlesUpdatesChan:           bundleUpdatesChan,
+		partitionToOffsetToCommitMap: make(map[int32]kafka.Offset),
+		bundleToMsgMap:               make(map[*bundle.ObjectsBundle]*kafka.Message),
+		ctx:                          ctx,
+		cancelFunc:                   cancelFunc,
 	}, nil
 }
 
-func readEnvVars() (*kafka.ConfigMap, []string, error) {
+func readEnvVars() (*kafka.ConfigMap, string, error) {
 	consumerID, found := os.LookupEnv(envVarKafkaConsumerID)
 	if !found {
-		return nil, nil, fmt.Errorf("%w: %s", errEnvVarNotFound, envVarKafkaConsumerID)
+		return nil, "", fmt.Errorf("%w: %s", errEnvVarNotFound, envVarKafkaConsumerID)
 	}
 
 	bootstrapServers, found := os.LookupEnv(envVarKafkaBootstrapServers)
 	if !found {
-		return nil, nil, fmt.Errorf("%w: %s", errEnvVarNotFound, envVarKafkaBootstrapServers)
+		return nil, "", fmt.Errorf("%w: %s", errEnvVarNotFound, envVarKafkaBootstrapServers)
 	}
 
-	topicsString, found := os.LookupEnv(envVarKafkaTopic)
+	topic, found := os.LookupEnv(envVarKafkaTopic)
 	if !found {
-		return nil, nil, fmt.Errorf("%w: %s", errEnvVarNotFound, envVarKafkaTopic)
+		return nil, "", fmt.Errorf("%w: %s", errEnvVarNotFound, envVarKafkaTopic)
 	}
 
 	kafkaConfigMap := &kafka.ConfigMap{
@@ -102,33 +100,33 @@ func readEnvVars() (*kafka.ConfigMap, []string, error) {
 	if sslBase64EncodedCertificate, found := os.LookupEnv(envVarKafkaSSLCA); found {
 		certFileLocation, err := kafkaclient.SetCertificate(&sslBase64EncodedCertificate)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to configure kafka-consumer - %w", err)
+			return nil, "", fmt.Errorf("failed to configure kafka-consumer - %w", err)
 		}
 
 		if err = kafkaConfigMap.SetKey("security.protocol", "ssl"); err != nil {
-			return nil, nil, fmt.Errorf("failed to configure kafka-consumer - %w", err)
+			return nil, "", fmt.Errorf("failed to configure kafka-consumer - %w", err)
 		}
 
 		if err = kafkaConfigMap.SetKey("ssl.ca.location", certFileLocation); err != nil {
-			return nil, nil, fmt.Errorf("failed to configure kafka-consumer - %w", err)
+			return nil, "", fmt.Errorf("failed to configure kafka-consumer - %w", err)
 		}
 	}
 
-	return kafkaConfigMap, strings.Split(topicsString, ","), nil
+	return kafkaConfigMap, topic, nil
 }
 
 // Consumer abstracts hub-of-hubs-kafka-transport kafka-consumer's generic usage.
 type Consumer struct {
-	log                logr.Logger
-	kafkaConsumer      *kafkaconsumer.KafkaConsumer
-	compressorsMap     map[compressor.CompressionType]compressors.Compressor
-	commitsChan        chan *kafka.Message
-	commitsRetryChan   chan *kafka.Message
+	log            logr.Logger
+	kafkaConsumer  *kafkaconsumer.KafkaConsumer
+	compressorsMap map[compressor.CompressionType]compressors.Compressor
+	topic          string
+
 	msgChan            chan *kafka.Message
 	bundlesUpdatesChan chan *bundle.ObjectsBundle
 
-	partitionIDToCommittedOffsetMap map[int32]kafka.Offset
-	bundleToMsgMap                  map[*bundle.ObjectsBundle]*kafka.Message
+	partitionToOffsetToCommitMap map[int32]kafka.Offset
+	bundleToMsgMap               map[*bundle.ObjectsBundle]*kafka.Message
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -141,7 +139,6 @@ func (c *Consumer) Start() {
 	c.startOnce.Do(func() {
 		go c.handleCommits(c.ctx)
 		go c.handleKafkaMessages(c.ctx)
-		go c.handleCommitRetries(c.ctx)
 	})
 }
 
@@ -150,8 +147,6 @@ func (c *Consumer) Stop() {
 	c.stopOnce.Do(func() {
 		c.cancelFunc()
 		close(c.msgChan)
-		close(c.commitsChan)
-		close(c.commitsRetryChan)
 		c.kafkaConsumer.Close()
 	})
 }
@@ -163,7 +158,12 @@ func (c *Consumer) CommitAsync(bundle *bundle.ObjectsBundle) {
 		return
 	}
 
-	c.commitsChan <- msg
+	if commitCandidate, found := c.partitionToOffsetToCommitMap[msg.TopicPartition.Partition]; found &&
+		msg.TopicPartition.Offset <= commitCandidate {
+		return
+	}
+
+	c.partitionToOffsetToCommitMap[msg.TopicPartition.Partition] = msg.TopicPartition.Offset
 
 	// delete from map since msg will keep getting juggled in queues and stack-frames until committed or dropped.
 	delete(c.bundleToMsgMap, bundle)
@@ -182,13 +182,13 @@ func (c *Consumer) handleKafkaMessages(ctx context.Context) {
 }
 
 func (c *Consumer) processMessage(msg *kafka.Message) {
-	compressionTypeHeader, found := c.lookupHeader(msg, kafkaHeaderTypes.HeaderCompressionType)
+	compressionTypeBytes, found := c.lookupHeaderValue(msg, kafkaHeaderTypes.HeaderCompressionType)
 	if !found {
 		c.logError(errMissingCompressionType, "failed to process message", msg)
 		return
 	}
 
-	compressionType := compressor.CompressionType(compressionTypeHeader.Value)
+	compressionType := compressor.CompressionType(compressionTypeBytes)
 
 	decompressedPayload, err := c.decompressPayload(msg.Value, compressionType)
 	if err != nil {
@@ -210,56 +210,21 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 		c.bundleToMsgMap[receivedBundle] = msg
 
 		if err := json.Unmarshal(transportMsg.Payload, receivedBundle); err != nil {
-			c.log.Error(err, "failed to parse bundle", "message id", transportMsg.ID,
-				"message type", transportMsg.MsgType, "message version", transportMsg.Version)
+			c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
+				"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
 
 			return
 		}
 
 		c.bundlesUpdatesChan <- receivedBundle
 	default:
-		c.log.Error(errReceivedUnsupportedBundleType, "message id", transportMsg.ID,
-			"message type", transportMsg.MsgType, "message version", transportMsg.Version)
+		c.log.Error(errReceivedUnsupportedBundleType, "MessageID", transportMsg.ID,
+			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
 	}
 }
 
 func (c *Consumer) handleCommits(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case processedMsg := <-c.commitsChan:
-			c.commitOffset(processedMsg)
-		}
-	}
-}
-
-func (c *Consumer) commitOffset(msg *kafka.Message) {
-	msgOffset := msg.TopicPartition.Offset
-	msgPartition := msg.TopicPartition.Partition
-
-	committedOffset, found := c.partitionIDToCommittedOffsetMap[msgPartition]
-	if !found || msgOffset > committedOffset {
-		if err := c.kafkaConsumer.Commit(msg); err != nil {
-			c.logError(err, "transport failed to commit message", msg)
-
-			go func() {
-				c.commitsRetryChan <- msg
-			}()
-
-			return
-		}
-
-		c.partitionIDToCommittedOffsetMap[msgPartition] = msgOffset
-		c.log.Info("transport committed message", "topic-partition", msg.TopicPartition)
-	}
-}
-
-func (c *Consumer) handleCommitRetries(ctx context.Context) {
-	ticker := time.NewTicker(commitRescheduleDelay)
-
-	partitionIDToHighestBundleMap := make(map[int32]*kafka.Message)
+	ticker := time.NewTicker(committerInterval)
 
 	for {
 		select {
@@ -267,33 +232,35 @@ func (c *Consumer) handleCommitRetries(ctx context.Context) {
 			return
 
 		case <-ticker.C:
-			for partition, highestMsg := range partitionIDToHighestBundleMap {
-				go func() {
-					c.commitsChan <- highestMsg
-				}()
-
-				delete(partitionIDToHighestBundleMap, partition)
-			}
-
-		case msgToRetry := <-c.commitsRetryChan:
-			msgPartition := msgToRetry.TopicPartition.Partition
-
-			highestMsg, found := partitionIDToHighestBundleMap[msgPartition]
-			if found && highestMsg.TopicPartition.Offset > msgToRetry.TopicPartition.Offset {
-				c.log.Info("transport dropped low commit retry request",
-					"topic-partition", msgToRetry.TopicPartition)
-
+			if len(c.partitionToOffsetToCommitMap) == 0 {
 				continue
 			}
 
-			// update partition mapping
-			partitionIDToHighestBundleMap[msgPartition] = msgToRetry
+			topicPartitions := make([]kafka.TopicPartition, 0, len(c.partitionToOffsetToCommitMap))
+
+			// prepare batch for committing
+			for partition, highestOffset := range c.partitionToOffsetToCommitMap {
+				topicPartitions = append(topicPartitions, kafka.TopicPartition{
+					Topic:     &c.topic,
+					Partition: partition,
+					Offset:    highestOffset,
+				})
+			}
+
+			if _, err := c.kafkaConsumer.Consumer().CommitOffsets(topicPartitions); err != nil {
+				c.log.Error(err, "failed to commit offsets", "TopicPartitions", topicPartitions)
+				continue
+			}
+
+			// all offsets committed, clean map
+			c.partitionToOffsetToCommitMap = make(map[int32]kafka.Offset)
+			c.log.Info("committed offsets", "TopicPartitions", topicPartitions)
 		}
 	}
 }
 
 func (c *Consumer) logError(err error, errMessage string, msg *kafka.Message) {
-	c.log.Error(err, errMessage, "message key", string(msg.Key), "topic-partition", msg.TopicPartition)
+	c.log.Error(err, errMessage, "MessageKey", string(msg.Key), "TopicPartition", msg.TopicPartition)
 }
 
 func (c *Consumer) decompressPayload(payload []byte, msgCompressorType compressor.CompressionType) ([]byte, error) {
@@ -316,10 +283,10 @@ func (c *Consumer) decompressPayload(payload []byte, msgCompressorType compresso
 	return decompressedBytes, nil
 }
 
-func (c *Consumer) lookupHeader(msg *kafka.Message, headerKey string) (*kafka.Header, bool) {
+func (c *Consumer) lookupHeaderValue(msg *kafka.Message, headerKey string) ([]byte, bool) {
 	for _, header := range msg.Headers {
 		if header.Key == headerKey {
-			return &header, true
+			return header.Value, true
 		}
 	}
 

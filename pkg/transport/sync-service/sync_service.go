@@ -175,8 +175,8 @@ func (s *SyncService) handleBundles() {
 }
 
 func (s *SyncService) logError(err error, errMsg string, objectMetaData *client.ObjectMetaData) {
-	s.log.Error(err, errMsg, "object id", objectMetaData.ObjectID, "object type", objectMetaData.ObjectType,
-		"object version", objectMetaData.Version, "object description", objectMetaData.Description)
+	s.log.Error(err, errMsg, "ObjectID", objectMetaData.ObjectID, "ObjectType", objectMetaData.ObjectType,
+		"ObjectDescription", objectMetaData.Description, "Version", objectMetaData.Version)
 }
 
 func (s *SyncService) decompressPayload(payload []byte, msgCompressorType string) ([]byte, error) {
