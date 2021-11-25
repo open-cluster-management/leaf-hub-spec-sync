@@ -169,6 +169,42 @@ func (c *Consumer) CommitAsync(bundle *bundle.ObjectsBundle) {
 	delete(c.bundleToMsgMap, bundle)
 }
 
+func (c *Consumer) handleCommits(ctx context.Context) {
+	ticker := time.NewTicker(committerInterval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-ticker.C:
+			if len(c.partitionToOffsetToCommitMap) == 0 {
+				continue
+			}
+
+			topicPartitions := make([]kafka.TopicPartition, 0, len(c.partitionToOffsetToCommitMap))
+
+			// prepare batch for committing
+			for partition, highestOffset := range c.partitionToOffsetToCommitMap {
+				topicPartitions = append(topicPartitions, kafka.TopicPartition{
+					Topic:     &c.topic,
+					Partition: partition,
+					Offset:    highestOffset,
+				})
+			}
+
+			if _, err := c.kafkaConsumer.Consumer().CommitOffsets(topicPartitions); err != nil {
+				c.log.Error(err, "failed to commit offsets", "TopicPartitions", topicPartitions)
+				continue
+			}
+
+			// all offsets committed, clean map
+			c.partitionToOffsetToCommitMap = make(map[int32]kafka.Offset)
+			c.log.Info("committed offsets", "TopicPartitions", topicPartitions)
+		}
+	}
+}
+
 func (c *Consumer) handleKafkaMessages(ctx context.Context) {
 	for {
 		select {
@@ -220,42 +256,6 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 	default:
 		c.log.Error(errReceivedUnsupportedBundleType, "MessageID", transportMsg.ID,
 			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
-	}
-}
-
-func (c *Consumer) handleCommits(ctx context.Context) {
-	ticker := time.NewTicker(committerInterval)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case <-ticker.C:
-			if len(c.partitionToOffsetToCommitMap) == 0 {
-				continue
-			}
-
-			topicPartitions := make([]kafka.TopicPartition, 0, len(c.partitionToOffsetToCommitMap))
-
-			// prepare batch for committing
-			for partition, highestOffset := range c.partitionToOffsetToCommitMap {
-				topicPartitions = append(topicPartitions, kafka.TopicPartition{
-					Topic:     &c.topic,
-					Partition: partition,
-					Offset:    highestOffset,
-				})
-			}
-
-			if _, err := c.kafkaConsumer.Consumer().CommitOffsets(topicPartitions); err != nil {
-				c.log.Error(err, "failed to commit offsets", "TopicPartitions", topicPartitions)
-				continue
-			}
-
-			// all offsets committed, clean map
-			c.partitionToOffsetToCommitMap = make(map[int32]kafka.Offset)
-			c.log.Info("committed offsets", "TopicPartitions", topicPartitions)
-		}
 	}
 }
 
