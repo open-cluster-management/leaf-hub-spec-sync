@@ -17,7 +17,7 @@ import (
 
 // AddBundleSpecSync adds BundleSpecSync to the manager.
 func AddBundleSpecSync(log logr.Logger, mgr ctrl.Manager, transport transport.Transport,
-	bundleUpdatesChan chan *bundle.ObjectsBundle) error {
+	bundleUpdatesChan chan *bundle.Bundle) error {
 	// create k8s worker pool
 	k8sWorkerPool, err := k8sworkerpool.NewK8sWorkerPool(log)
 	if err != nil {
@@ -41,7 +41,7 @@ func AddBundleSpecSync(log logr.Logger, mgr ctrl.Manager, transport transport.Tr
 type BundleSpecSync struct {
 	log                          logr.Logger
 	transport                    transport.Transport
-	bundleUpdatesChan            chan *bundle.ObjectsBundle
+	bundleUpdatesChan            chan *bundle.Bundle
 	k8sWorkerPool                *k8sworkerpool.K8sWorkerPool
 	bundleProcessingWaitingGroup sync.WaitGroup
 }
@@ -93,7 +93,7 @@ func (syncer *BundleSpecSync) sync(ctx context.Context) {
 			// ensure all updates and deletes have finished before reading next bundle
 			syncer.bundleProcessingWaitingGroup.Wait()
 			// mark bundle as committed since it was fully processed
-			syncer.transport.CommitAsync(receivedBundle)
+			syncer.transport.CommitAsync(receivedBundle.BundleMetadata)
 		}
 	}
 }

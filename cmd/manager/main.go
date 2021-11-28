@@ -41,7 +41,7 @@ func printVersion(log logr.Logger) {
 }
 
 // function to choose transport type based on env var.
-func getTransport(transportType string, bundleUpdatesChan chan *bundle.ObjectsBundle) (transport.Transport, error) {
+func getTransport(transportType string, bundleUpdatesChan chan *bundle.Bundle) (transport.Transport, error) {
 	switch transportType {
 	case kafkaTransportTypeName:
 		kafkaConsumer, err := kafka.NewConsumer(ctrl.Log.WithName("kafka"), bundleUpdatesChan)
@@ -87,7 +87,7 @@ func doMain() int {
 	}
 
 	// transport layer initialization
-	bundleUpdatesChan := make(chan *bundle.ObjectsBundle)
+	bundleUpdatesChan := make(chan *bundle.Bundle)
 	defer close(bundleUpdatesChan)
 
 	transportObj, err := getTransport(transportType, bundleUpdatesChan)
@@ -116,7 +116,7 @@ func doMain() int {
 }
 
 func createManager(leaderElectionNamespace string, transport transport.Transport,
-	bundleUpdatesChan chan *bundle.ObjectsBundle) (ctrl.Manager, error) {
+	bundleUpdatesChan chan *bundle.Bundle) (ctrl.Manager, error) {
 	options := ctrl.Options{
 		MetricsBindAddress:      fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 		LeaderElection:          true,

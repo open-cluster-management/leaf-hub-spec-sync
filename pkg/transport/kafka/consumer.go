@@ -36,7 +36,7 @@ var (
 )
 
 // NewConsumer creates a new instance of Consumer.
-func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) (*Consumer, error) {
+func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.Bundle) (*Consumer, error) {
 	kafkaConfigMap, topic, err := readEnvVars()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
@@ -67,7 +67,6 @@ func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) 
 		msgChan:                      msgChan,
 		bundlesUpdatesChan:           bundleUpdatesChan,
 		partitionToOffsetToCommitMap: make(map[int32]kafka.Offset),
-		bundleToMsgMap:               make(map[*bundle.ObjectsBundle]*kafka.Message),
 		ctx:                          ctx,
 		cancelFunc:                   cancelFunc,
 		lock:                         sync.Mutex{},
@@ -124,10 +123,9 @@ type Consumer struct {
 	topic          string
 
 	msgChan            chan *kafka.Message
-	bundlesUpdatesChan chan *bundle.ObjectsBundle
+	bundlesUpdatesChan chan *bundle.Bundle
 
-	partitionToOffsetToCommitMap map[int32]kafka.Offset
-	bundleToMsgMap               map[*bundle.ObjectsBundle]*kafka.Message
+	partitionToOffsetToCommitMap map[int32]kafka.Offset // size limited at all times (low)
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -154,24 +152,21 @@ func (c *Consumer) Stop() {
 }
 
 // CommitAsync commits a transported message that was processed locally.
-func (c *Consumer) CommitAsync(bundle *bundle.ObjectsBundle) {
+func (c *Consumer) CommitAsync(metadata transport.BundleMetadata) {
+	topicPartition, ok := metadata.(kafka.TopicPartition)
+	if !ok {
+		return // shouldn't happen
+	}
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	msg, exists := c.bundleToMsgMap[bundle]
-	if !exists {
+	if commitCandidate, found := c.partitionToOffsetToCommitMap[topicPartition.Partition]; found &&
+		topicPartition.Offset <= commitCandidate {
 		return
 	}
 
-	if commitCandidate, found := c.partitionToOffsetToCommitMap[msg.TopicPartition.Partition]; found &&
-		msg.TopicPartition.Offset <= commitCandidate {
-		return
-	}
-
-	c.partitionToOffsetToCommitMap[msg.TopicPartition.Partition] = msg.TopicPartition.Offset
-
-	// delete from map since msg will keep getting juggled in queues and stack-frames until committed or dropped.
-	delete(c.bundleToMsgMap, bundle)
+	c.partitionToOffsetToCommitMap[topicPartition.Partition] = topicPartition.Offset
 }
 
 func (c *Consumer) handleCommits(ctx context.Context) {
@@ -190,9 +185,8 @@ func (c *Consumer) handleCommits(ctx context.Context) {
 
 func (c *Consumer) commitMappedOffsets() {
 	c.lock.Lock()
-	defer c.lock.Unlock()
-
 	if len(c.partitionToOffsetToCommitMap) == 0 {
+		c.lock.Unlock()
 		return
 	}
 
@@ -203,17 +197,27 @@ func (c *Consumer) commitMappedOffsets() {
 		topicPartitions = append(topicPartitions, kafka.TopicPartition{
 			Topic:     &c.topic,
 			Partition: partition,
-			Offset:    highestOffset,
+			Offset:    highestOffset + 1, // kafka re-processes the committed offset on restart, so +1 to avoid that.
 		})
 	}
+
+	c.lock.Unlock()
 
 	if _, err := c.kafkaConsumer.Consumer().CommitOffsets(topicPartitions); err != nil {
 		c.log.Error(err, "failed to commit offsets", "TopicPartitions", topicPartitions)
 		return
 	}
 
-	// all offsets committed, clean map
-	c.partitionToOffsetToCommitMap = make(map[int32]kafka.Offset)
+	// update offsets map, delete what's been committed
+	c.lock.Lock()
+	for _, topicPartition := range topicPartitions {
+		if c.partitionToOffsetToCommitMap[topicPartition.Partition] == topicPartition.Offset {
+			// no new offsets processed on this partition, delete from map
+			delete(c.partitionToOffsetToCommitMap, topicPartition.Partition)
+		}
+	}
+	c.lock.Unlock()
+
 	c.log.Info("committed offsets", "TopicPartitions", topicPartitions)
 }
 
@@ -256,12 +260,6 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 	case datatypes.SpecBundle:
 		receivedBundle := &bundle.ObjectsBundle{}
 
-		c.lock.Lock() // lock since writing to bundleToMsgMap
-		c.bundleToMsgMap[receivedBundle] = msg
-		c.lock.Unlock()
-		// NOTE: the unlocking has to be before the blocking write to the channel below, otherwise there will be a
-		// deadlock!
-
 		if err := json.Unmarshal(transportMsg.Payload, receivedBundle); err != nil {
 			c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
 				"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
@@ -269,7 +267,10 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 			return
 		}
 
-		c.bundlesUpdatesChan <- receivedBundle
+		c.bundlesUpdatesChan <- &bundle.Bundle{
+			ObjectsBundle:  receivedBundle,
+			BundleMetadata: msg.TopicPartition,
+		}
 	default:
 		c.log.Error(errReceivedUnsupportedBundleType, "MessageID", transportMsg.ID,
 			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)

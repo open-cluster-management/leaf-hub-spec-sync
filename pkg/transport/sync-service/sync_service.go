@@ -2,6 +2,7 @@ package syncservice
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,12 +10,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	datatypes "github.com/open-cluster-management/hub-of-hubs-data-types"
 	compressor "github.com/open-cluster-management/hub-of-hubs-message-compression"
 	"github.com/open-cluster-management/hub-of-hubs-message-compression/compressors"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
+	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
 	"github.com/open-horizon/edge-sync-service-client/client"
 )
 
@@ -24,6 +27,7 @@ const (
 	envVarSyncServicePort            = "SYNC_SERVICE_PORT"
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
 	compressionHeaderTokensLength    = 2
+	committerInterval                = time.Second * 20
 )
 
 var (
@@ -33,7 +37,7 @@ var (
 )
 
 // NewSyncService creates a new instance of SyncService.
-func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) (*SyncService, error) {
+func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.Bundle) (*SyncService, error) {
 	serverProtocol, host, port, pollingInterval, err := readEnvVars()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize sync service - %w", err)
@@ -43,6 +47,8 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundl
 
 	syncServiceClient.SetAppKeyAndSecret("user@myorg", "")
 
+	ctx, cancelFunc := context.WithCancel(context.Background())
+
 	return &SyncService{
 		log:                       log,
 		client:                    syncServiceClient,
@@ -50,8 +56,9 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundl
 		pollingInterval:           pollingInterval,
 		bundlesMetaDataChan:       make(chan *client.ObjectMetaData),
 		bundlesUpdatesChan:        bundleUpdatesChan,
-		bundleToObjectMetadataMap: make(map[*bundle.ObjectsBundle]*client.ObjectMetaData),
-		stopChan:                  make(chan struct{}, 1),
+		objectMetadataToCommitMap: make(map[string]*client.ObjectMetaData),
+		ctx:                       ctx,
+		cancelFunc:                cancelFunc,
 		lock:                      sync.Mutex{},
 	}, nil
 }
@@ -99,50 +106,103 @@ type SyncService struct {
 	compressorsMap            map[string]compressors.Compressor
 	pollingInterval           int
 	bundlesMetaDataChan       chan *client.ObjectMetaData
-	bundlesUpdatesChan        chan *bundle.ObjectsBundle
-	bundleToObjectMetadataMap map[*bundle.ObjectsBundle]*client.ObjectMetaData
-	stopChan                  chan struct{}
-	startOnce                 sync.Once
-	stopOnce                  sync.Once
-	lock                      sync.Mutex
-}
+	bundlesUpdatesChan        chan *bundle.Bundle
+	objectMetadataToCommitMap map[string]*client.ObjectMetaData // size limited at all times (low)
 
-// CommitAsync commits a transported message that was processed locally.
-func (s *SyncService) CommitAsync(bundle *bundle.ObjectsBundle) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	if objectMetadata, found := s.bundleToObjectMetadataMap[bundle]; found {
-		if err := s.client.MarkObjectConsumed(objectMetadata); err != nil {
-			s.logError(err, "failed to mark object as consumed", objectMetadata)
-		}
-
-		delete(s.bundleToObjectMetadataMap, bundle)
-	}
+	ctx        context.Context
+	cancelFunc context.CancelFunc
+	startOnce  sync.Once
+	stopOnce   sync.Once
+	lock       sync.Mutex
 }
 
 // Start function starts sync service.
 func (s *SyncService) Start() {
 	s.startOnce.Do(func() {
-		go s.handleBundles()
+		go s.handleCommits(s.ctx)
+		go s.handleBundles(s.ctx)
 	})
 }
 
 // Stop function stops sync service.
 func (s *SyncService) Stop() {
 	s.stopOnce.Do(func() {
-		close(s.stopChan)
+		s.cancelFunc()
 		close(s.bundlesMetaDataChan)
 	})
 }
 
-func (s *SyncService) handleBundles() {
+// CommitAsync commits a transported message that was processed locally.
+func (s *SyncService) CommitAsync(metadata transport.BundleMetadata) {
+	objectMetadata, ok := metadata.(client.ObjectMetaData)
+	if !ok {
+		return // shouldn't happen
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.objectMetadataToCommitMap[fmt.Sprintf("%s.%s", objectMetadata.ObjectType,
+		objectMetadata.ObjectID)] = &objectMetadata
+}
+
+func (s *SyncService) handleCommits(ctx context.Context) {
+	ticker := time.NewTicker(committerInterval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-ticker.C:
+			s.commitMappedObjectMetadata()
+		}
+	}
+}
+
+func (s *SyncService) commitMappedObjectMetadata() {
+	s.lock.Lock()
+	if len(s.objectMetadataToCommitMap) == 0 {
+		s.lock.Unlock()
+		return
+	}
+
+	objectMetadataToCommit := make([]*client.ObjectMetaData, 0, len(s.objectMetadataToCommitMap))
+
+	for _, objectMetadata := range s.objectMetadataToCommitMap {
+		objectMetadataToCommit = append(objectMetadataToCommit, objectMetadata)
+	}
+
+	s.lock.Unlock()
+
+	for _, objectMetadata := range objectMetadataToCommit {
+		if err := s.client.MarkObjectConsumed(objectMetadata); err != nil {
+			// if one fails, we assume the rest will too
+			s.log.Error(err, "failed to commit ObjectMetadata batch", "ObjectMetadata", objectMetadataToCommit)
+		}
+	}
+
+	// update metadata map, delete what's been committed
+	s.lock.Lock()
+	for _, objectMetadata := range objectMetadataToCommit {
+		objectIdentifier := fmt.Sprintf("%s.%s", objectMetadata.ObjectType, objectMetadata.ObjectID)
+		if s.objectMetadataToCommitMap[objectIdentifier] == objectMetadata {
+			// no new object processed for this type, delete from map
+			delete(s.objectMetadataToCommitMap, objectIdentifier)
+		}
+	}
+	s.lock.Unlock()
+
+	s.log.Info("committed objects", "ObjectMetadata", objectMetadataToCommit)
+}
+
+func (s *SyncService) handleBundles(ctx context.Context) {
 	// register for updates for spec bundles and config objects, includes all types of spec bundles.
 	s.client.StartPollingForUpdates(datatypes.SpecBundle, s.pollingInterval, s.bundlesMetaDataChan)
 
 	for {
 		select {
-		case <-s.stopChan:
+		case <-ctx.Done():
 			return
 		case objectMetaData := <-s.bundlesMetaDataChan:
 			var buf bytes.Buffer
@@ -169,13 +229,10 @@ func (s *SyncService) handleBundles() {
 				continue
 			}
 
-			s.lock.Lock() // lock protected write since there are read/writes in CommitAsync call
-			s.bundleToObjectMetadataMap[receivedBundle] = objectMetaData
-			s.lock.Unlock()
-			// NOTE: the unlocking has to be before the blocking write to the channel below, otherwise there will be a
-			// deadlock!
-
-			s.bundlesUpdatesChan <- receivedBundle
+			s.bundlesUpdatesChan <- &bundle.Bundle{
+				ObjectsBundle:  receivedBundle,
+				BundleMetadata: objectMetaData,
+			}
 
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
 				s.logError(err, "failed to report object received to sync service", objectMetaData)
