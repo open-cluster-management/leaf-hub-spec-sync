@@ -52,6 +52,7 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundl
 		bundlesUpdatesChan:        bundleUpdatesChan,
 		bundleToObjectMetadataMap: make(map[*bundle.ObjectsBundle]*client.ObjectMetaData),
 		stopChan:                  make(chan struct{}, 1),
+		lock:                      sync.Mutex{},
 	}, nil
 }
 
@@ -103,10 +104,14 @@ type SyncService struct {
 	stopChan                  chan struct{}
 	startOnce                 sync.Once
 	stopOnce                  sync.Once
+	lock                      sync.Mutex
 }
 
 // CommitAsync commits a transported message that was processed locally.
 func (s *SyncService) CommitAsync(bundle *bundle.ObjectsBundle) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	if objectMetadata, found := s.bundleToObjectMetadataMap[bundle]; found {
 		if err := s.client.MarkObjectConsumed(objectMetadata); err != nil {
 			s.logError(err, "failed to mark object as consumed", objectMetadata)
@@ -164,7 +169,12 @@ func (s *SyncService) handleBundles() {
 				continue
 			}
 
+			s.lock.Lock() // lock protected write since there are read/writes in CommitAsync call
 			s.bundleToObjectMetadataMap[receivedBundle] = objectMetaData
+			s.lock.Unlock()
+			// NOTE: the unlocking has to be before the blocking write to the channel below, otherwise there will be a
+			// deadlock!
+
 			s.bundlesUpdatesChan <- receivedBundle
 
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {

@@ -70,6 +70,7 @@ func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.ObjectsBundle) 
 		bundleToMsgMap:               make(map[*bundle.ObjectsBundle]*kafka.Message),
 		ctx:                          ctx,
 		cancelFunc:                   cancelFunc,
+		lock:                         sync.Mutex{},
 	}, nil
 }
 
@@ -132,6 +133,7 @@ type Consumer struct {
 	cancelFunc context.CancelFunc
 	startOnce  sync.Once
 	stopOnce   sync.Once
+	lock       sync.Mutex
 }
 
 // Start function starts the consumer.
@@ -153,6 +155,9 @@ func (c *Consumer) Stop() {
 
 // CommitAsync commits a transported message that was processed locally.
 func (c *Consumer) CommitAsync(bundle *bundle.ObjectsBundle) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	msg, exists := c.bundleToMsgMap[bundle]
 	if !exists {
 		return
@@ -178,31 +183,38 @@ func (c *Consumer) handleCommits(ctx context.Context) {
 			return
 
 		case <-ticker.C:
-			if len(c.partitionToOffsetToCommitMap) == 0 {
-				continue
-			}
-
-			topicPartitions := make([]kafka.TopicPartition, 0, len(c.partitionToOffsetToCommitMap))
-
-			// prepare batch for committing
-			for partition, highestOffset := range c.partitionToOffsetToCommitMap {
-				topicPartitions = append(topicPartitions, kafka.TopicPartition{
-					Topic:     &c.topic,
-					Partition: partition,
-					Offset:    highestOffset,
-				})
-			}
-
-			if _, err := c.kafkaConsumer.Consumer().CommitOffsets(topicPartitions); err != nil {
-				c.log.Error(err, "failed to commit offsets", "TopicPartitions", topicPartitions)
-				continue
-			}
-
-			// all offsets committed, clean map
-			c.partitionToOffsetToCommitMap = make(map[int32]kafka.Offset)
-			c.log.Info("committed offsets", "TopicPartitions", topicPartitions)
+			c.commitMappedOffsets()
 		}
 	}
+}
+
+func (c *Consumer) commitMappedOffsets() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	if len(c.partitionToOffsetToCommitMap) == 0 {
+		return
+	}
+
+	topicPartitions := make([]kafka.TopicPartition, 0, len(c.partitionToOffsetToCommitMap))
+
+	// prepare batch for committing
+	for partition, highestOffset := range c.partitionToOffsetToCommitMap {
+		topicPartitions = append(topicPartitions, kafka.TopicPartition{
+			Topic:     &c.topic,
+			Partition: partition,
+			Offset:    highestOffset,
+		})
+	}
+
+	if _, err := c.kafkaConsumer.Consumer().CommitOffsets(topicPartitions); err != nil {
+		c.log.Error(err, "failed to commit offsets", "TopicPartitions", topicPartitions)
+		return
+	}
+
+	// all offsets committed, clean map
+	c.partitionToOffsetToCommitMap = make(map[int32]kafka.Offset)
+	c.log.Info("committed offsets", "TopicPartitions", topicPartitions)
 }
 
 func (c *Consumer) handleKafkaMessages(ctx context.Context) {
@@ -243,7 +255,12 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 		fallthrough // same behavior as SpecBundle
 	case datatypes.SpecBundle:
 		receivedBundle := &bundle.ObjectsBundle{}
+
+		c.lock.Lock() // lock since writing to bundleToMsgMap
 		c.bundleToMsgMap[receivedBundle] = msg
+		c.lock.Unlock()
+		// NOTE: the unlocking has to be before the blocking write to the channel below, otherwise there will be a
+		// deadlock!
 
 		if err := json.Unmarshal(transportMsg.Payload, receivedBundle); err != nil {
 			c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
