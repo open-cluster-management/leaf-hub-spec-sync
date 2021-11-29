@@ -231,16 +231,13 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 				continue
 			}
 
-			receivedBundle := &bundle.ObjectsBundle{}
+			receivedBundle := bundle.NewBundle()
 			if err := json.Unmarshal(decompressedPayload, receivedBundle); err != nil {
 				s.logError(err, "failed to parse bundle", objectMetaData)
 				continue
 			}
 
-			s.bundlesUpdatesChan <- &bundle.Bundle{
-				ObjectsBundle:  receivedBundle,
-				BundleMetadata: objectMetaData,
-			}
+			s.bundlesUpdatesChan <- receivedBundle.WithMetadata(objectMetaData)
 
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
 				s.logError(err, "failed to report object received to sync service", objectMetaData)
