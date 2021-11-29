@@ -267,8 +267,7 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 	case datatypes.Config:
 		fallthrough // same behavior as SpecBundle
 	case datatypes.SpecBundle:
-		receivedBundle := &bundle.ObjectsBundle{}
-
+		receivedBundle := bundle.NewBundle()
 		if err := json.Unmarshal(transportMsg.Payload, receivedBundle); err != nil {
 			c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
 				"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
@@ -276,10 +275,7 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 			return
 		}
 
-		c.bundlesUpdatesChan <- &bundle.Bundle{
-			ObjectsBundle:  receivedBundle,
-			BundleMetadata: msg.TopicPartition,
-		}
+		c.bundlesUpdatesChan <- receivedBundle.WithMetadata(msg.TopicPartition)
 	default:
 		c.log.Error(errReceivedUnsupportedBundleType, "MessageID", transportMsg.ID,
 			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
