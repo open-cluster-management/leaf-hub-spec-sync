@@ -184,10 +184,24 @@ func (c *Consumer) handleCommits(ctx context.Context) {
 }
 
 func (c *Consumer) commitMappedOffsets() {
+	if topicPartitions := c.getTopicPartitionsToCommit(); topicPartitions != nil {
+		// commit topicPartitions
+		if _, err := c.kafkaConsumer.Consumer().CommitOffsets(topicPartitions); err != nil {
+			c.log.Error(err, "failed to commit offsets", "TopicPartitions", topicPartitions)
+			return
+		}
+
+		// update offsets map, delete what's been committed
+		c.removeCommittedTopicPartitionsFromMap(topicPartitions)
+	}
+}
+
+func (c *Consumer) getTopicPartitionsToCommit() []kafka.TopicPartition {
 	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	if len(c.partitionToOffsetToCommitMap) == 0 {
-		c.lock.Unlock()
-		return
+		return nil
 	}
 
 	topicPartitions := make([]kafka.TopicPartition, 0, len(c.partitionToOffsetToCommitMap))
@@ -201,22 +215,19 @@ func (c *Consumer) commitMappedOffsets() {
 		})
 	}
 
-	c.lock.Unlock()
+	return topicPartitions
+}
 
-	if _, err := c.kafkaConsumer.Consumer().CommitOffsets(topicPartitions); err != nil {
-		c.log.Error(err, "failed to commit offsets", "TopicPartitions", topicPartitions)
-		return
-	}
-
-	// update offsets map, delete what's been committed
+func (c *Consumer) removeCommittedTopicPartitionsFromMap(topicPartitions []kafka.TopicPartition) {
 	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	for _, topicPartition := range topicPartitions {
 		if c.partitionToOffsetToCommitMap[topicPartition.Partition] == topicPartition.Offset {
 			// no new offsets processed on this partition, delete from map
 			delete(c.partitionToOffsetToCommitMap, topicPartition.Partition)
 		}
 	}
-	c.lock.Unlock()
 
 	c.log.Info("committed offsets", "TopicPartitions", topicPartitions)
 }

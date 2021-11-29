@@ -161,39 +161,49 @@ func (s *SyncService) handleCommits(ctx context.Context) {
 }
 
 func (s *SyncService) commitMappedObjectMetadata() {
+	if objectMetadataToCommit := s.getObjectMetadataToCommit(); objectMetadataToCommit != nil {
+		// commit object-metadata
+		for _, objectMetadata := range objectMetadataToCommit {
+			if err := s.client.MarkObjectConsumed(objectMetadata); err != nil {
+				// if one fails, we assume the rest will too
+				s.log.Error(err, "failed to commit ObjectMetadata batch", "ObjectMetadata", objectMetadataToCommit)
+			}
+		}
+
+		// update metadata map, delete what's been committed
+		s.removeCommittedObjectMetadataFromMap(objectMetadataToCommit)
+	}
+}
+
+func (s *SyncService) getObjectMetadataToCommit() []*client.ObjectMetaData {
 	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	if len(s.objectMetadataToCommitMap) == 0 {
-		s.lock.Unlock()
-		return
+		return nil
 	}
 
 	objectMetadataToCommit := make([]*client.ObjectMetaData, 0, len(s.objectMetadataToCommitMap))
-
 	for _, objectMetadata := range s.objectMetadataToCommitMap {
 		objectMetadataToCommit = append(objectMetadataToCommit, objectMetadata)
 	}
 
-	s.lock.Unlock()
+	return objectMetadataToCommit
+}
 
-	for _, objectMetadata := range objectMetadataToCommit {
-		if err := s.client.MarkObjectConsumed(objectMetadata); err != nil {
-			// if one fails, we assume the rest will too
-			s.log.Error(err, "failed to commit ObjectMetadata batch", "ObjectMetadata", objectMetadataToCommit)
-		}
-	}
-
-	// update metadata map, delete what's been committed
+func (s *SyncService) removeCommittedObjectMetadataFromMap(committedObjectMetadata []*client.ObjectMetaData) {
 	s.lock.Lock()
-	for _, objectMetadata := range objectMetadataToCommit {
+	defer s.lock.Unlock()
+
+	for _, objectMetadata := range committedObjectMetadata {
 		objectIdentifier := fmt.Sprintf("%s.%s", objectMetadata.ObjectType, objectMetadata.ObjectID)
 		if s.objectMetadataToCommitMap[objectIdentifier] == objectMetadata {
 			// no new object processed for this type, delete from map
 			delete(s.objectMetadataToCommitMap, objectIdentifier)
 		}
 	}
-	s.lock.Unlock()
 
-	s.log.Info("committed objects", "ObjectMetadata", objectMetadataToCommit)
+	s.log.Info("committed objects", "ObjectMetadata", committedObjectMetadata)
 }
 
 func (s *SyncService) handleBundles(ctx context.Context) {
