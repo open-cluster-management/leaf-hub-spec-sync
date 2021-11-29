@@ -228,8 +228,6 @@ func (c *Consumer) removeCommittedTopicPartitionsFromMap(topicPartitions []kafka
 			delete(c.partitionToOffsetToCommitMap, topicPartition.Partition)
 		}
 	}
-
-	c.log.Info("committed offsets", "TopicPartitions", topicPartitions)
 }
 
 func (c *Consumer) handleKafkaMessages(ctx context.Context) {

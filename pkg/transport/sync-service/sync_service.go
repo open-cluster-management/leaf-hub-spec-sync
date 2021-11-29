@@ -50,16 +50,16 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.Bundle) (*Sy
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	return &SyncService{
-		log:                       log,
-		client:                    syncServiceClient,
-		compressorsMap:            make(map[string]compressors.Compressor),
-		pollingInterval:           pollingInterval,
-		bundlesMetaDataChan:       make(chan *client.ObjectMetaData),
-		bundlesUpdatesChan:        bundleUpdatesChan,
-		objectMetadataToCommitMap: make(map[string]*client.ObjectMetaData),
-		ctx:                       ctx,
-		cancelFunc:                cancelFunc,
-		lock:                      sync.Mutex{},
+		log:                 log,
+		client:              syncServiceClient,
+		compressorsMap:      make(map[string]compressors.Compressor),
+		pollingInterval:     pollingInterval,
+		bundlesMetaDataChan: make(chan *client.ObjectMetaData),
+		bundlesUpdatesChan:  bundleUpdatesChan,
+		commitMap:           make(map[string]*client.ObjectMetaData),
+		ctx:                 ctx,
+		cancelFunc:          cancelFunc,
+		lock:                sync.Mutex{},
 	}, nil
 }
 
@@ -101,13 +101,13 @@ func readEnvVars() (string, string, uint16, int, error) {
 
 // SyncService abstracts Sync Service client.
 type SyncService struct {
-	log                       logr.Logger
-	client                    *client.SyncServiceClient
-	compressorsMap            map[string]compressors.Compressor
-	pollingInterval           int
-	bundlesMetaDataChan       chan *client.ObjectMetaData
-	bundlesUpdatesChan        chan *bundle.Bundle
-	objectMetadataToCommitMap map[string]*client.ObjectMetaData // size limited at all times (low)
+	log                 logr.Logger
+	client              *client.SyncServiceClient
+	compressorsMap      map[string]compressors.Compressor
+	pollingInterval     int
+	bundlesMetaDataChan chan *client.ObjectMetaData
+	bundlesUpdatesChan  chan *bundle.Bundle
+	commitMap           map[string]*client.ObjectMetaData // map from object key to metadata. size limited at all times.
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -142,8 +142,7 @@ func (s *SyncService) CommitAsync(metadata transport.BundleMetadata) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	s.objectMetadataToCommitMap[fmt.Sprintf("%s.%s", objectMetadata.ObjectType,
-		objectMetadata.ObjectID)] = &objectMetadata
+	s.commitMap[fmt.Sprintf("%s.%s", objectMetadata.ObjectType, objectMetadata.ObjectID)] = &objectMetadata
 }
 
 func (s *SyncService) handleCommits(ctx context.Context) {
@@ -165,8 +164,9 @@ func (s *SyncService) commitMappedObjectMetadata() {
 		// commit object-metadata
 		for _, objectMetadata := range objectMetadataToCommit {
 			if err := s.client.MarkObjectConsumed(objectMetadata); err != nil {
-				// if one fails, we assume the rest will too
-				s.log.Error(err, "failed to commit ObjectMetadata batch", "ObjectMetadata", objectMetadataToCommit)
+				// if one fails, return and retry in next cycle
+				s.log.Error(err, "failed to commit", "ObjectMetadata", objectMetadata)
+				return
 			}
 		}
 
@@ -179,12 +179,12 @@ func (s *SyncService) getObjectMetadataToCommit() []*client.ObjectMetaData {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if len(s.objectMetadataToCommitMap) == 0 {
+	if len(s.commitMap) == 0 {
 		return nil
 	}
 
-	objectMetadataToCommit := make([]*client.ObjectMetaData, 0, len(s.objectMetadataToCommitMap))
-	for _, objectMetadata := range s.objectMetadataToCommitMap {
+	objectMetadataToCommit := make([]*client.ObjectMetaData, 0, len(s.commitMap))
+	for _, objectMetadata := range s.commitMap {
 		objectMetadataToCommit = append(objectMetadataToCommit, objectMetadata)
 	}
 
@@ -197,13 +197,11 @@ func (s *SyncService) removeCommittedObjectMetadataFromMap(committedObjectMetada
 
 	for _, objectMetadata := range committedObjectMetadata {
 		objectIdentifier := fmt.Sprintf("%s.%s", objectMetadata.ObjectType, objectMetadata.ObjectID)
-		if s.objectMetadataToCommitMap[objectIdentifier] == objectMetadata {
+		if s.commitMap[objectIdentifier] == objectMetadata {
 			// no new object processed for this type, delete from map
-			delete(s.objectMetadataToCommitMap, objectIdentifier)
+			delete(s.commitMap, objectIdentifier)
 		}
 	}
-
-	s.log.Info("committed objects", "ObjectMetadata", committedObjectMetadata)
 }
 
 func (s *SyncService) handleBundles(ctx context.Context) {
