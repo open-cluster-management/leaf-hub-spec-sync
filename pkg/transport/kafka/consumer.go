@@ -26,12 +26,12 @@ const (
 	envVarKafkaBootstrapServers = "KAFKA_BOOTSTRAP_SERVERS"
 	envVarKafkaSSLCA            = "KAFKA_SSL_CA"
 	envVarKafkaTopic            = "KAFKA_TOPIC"
+	defaultCompressionType      = compressor.NoOp
 	committerInterval           = time.Second * 20
 )
 
 var (
 	errReceivedUnsupportedBundleType = errors.New("received unsupported message type")
-	errMissingCompressionType        = errors.New("compression type is missing from message headers")
 	errEnvVarNotFound                = errors.New("environment variable not found")
 )
 
@@ -243,13 +243,11 @@ func (c *Consumer) handleKafkaMessages(ctx context.Context) {
 }
 
 func (c *Consumer) processMessage(msg *kafka.Message) {
-	compressionTypeBytes, found := c.lookupHeaderValue(msg, kafkaHeaderTypes.HeaderCompressionType)
-	if !found {
-		c.logError(errMissingCompressionType, "failed to process message", msg)
-		return
-	}
+	compressionType := defaultCompressionType
 
-	compressionType := compressor.CompressionType(compressionTypeBytes)
+	if compressionTypeBytes, found := c.lookupHeaderValue(msg, kafkaHeaderTypes.HeaderCompressionType); found {
+		compressionType = compressor.CompressionType(compressionTypeBytes)
+	}
 
 	decompressedPayload, err := c.decompressPayload(msg.Value, compressionType)
 	if err != nil {
