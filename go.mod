@@ -13,8 +13,10 @@ require (
 	github.com/open-horizon/edge-utilities v0.0.0-20190711093331-0908b45a7152 // indirect
 	github.com/operator-framework/operator-sdk v0.19.4
 	github.com/spf13/pflag v1.0.5
+	k8s.io/api v0.20.5
 	k8s.io/apimachinery v0.20.5
 	k8s.io/client-go v12.0.0+incompatible
+	k8s.io/klog/v2 v2.4.0
 	sigs.k8s.io/controller-runtime v0.6.2
 )
 

@@ -47,6 +47,7 @@ rules:
   - pods
   - configmaps
   - events
+  - namespaces
   verbs:
   - create
   - delete
@@ -90,8 +91,6 @@ spec:
       containers:
         - name: leaf-hub-spec-sync
           image: $IMAGE
-          args:
-            - '--zap-devel=true'
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE
@@ -99,18 +98,6 @@ spec:
                 fieldRef:
                  apiVersion: v1
                  fieldPath: metadata.namespace
-            - name: LH_ID
-              value: "$LH_ID"
-            - name: TRANSPORT_TYPE
-              value: "$TRANSPORT_TYPE"
-            - name: KAFKA_CONSUMER_ID
-              value: "$LH_ID"
-            - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "$KAFKA_BOOTSTRAP_SERVERS"
-            - name: KAFKA_TOPIC
-              value: "spec"
-            - name: KAFKA_SSL_CA
-              value: "$KAFKA_SSL_CA"
             - name: SYNC_SERVICE_PROTOCOL
               value: "http"
             - name: SYNC_SERVICE_HOST
@@ -119,8 +106,6 @@ spec:
               value: "$SYNC_SERVICE_PORT"
             - name: SYNC_SERVICE_POLLING_INTERVAL
               value: "5"
-            - name: K8S_CLIENTS_POOL_SIZE
-              value: "$K8S_CLIENTS_POOL_SIZE"
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
