@@ -27,6 +27,7 @@ const (
 	envVarSyncServicePort            = "SYNC_SERVICE_PORT"
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
 	compressionHeaderTokensLength    = 2
+	defaultCompressionType           = compressor.NoOp
 	committerInterval                = time.Second * 20
 )
 
@@ -52,7 +53,7 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.Bundle) (*Sy
 	return &SyncService{
 		log:                 log,
 		client:              syncServiceClient,
-		compressorsMap:      make(map[string]compressors.Compressor),
+		compressorsMap:      make(map[compressor.CompressionType]compressors.Compressor),
 		pollingInterval:     pollingInterval,
 		bundlesMetaDataChan: make(chan *client.ObjectMetaData),
 		bundlesUpdatesChan:  bundleUpdatesChan,
@@ -103,7 +104,7 @@ func readEnvVars() (string, string, uint16, int, error) {
 type SyncService struct {
 	log                 logr.Logger
 	client              *client.SyncServiceClient
-	compressorsMap      map[string]compressors.Compressor
+	compressorsMap      map[compressor.CompressionType]compressors.Compressor
 	pollingInterval     int
 	bundlesMetaDataChan chan *client.ObjectMetaData
 	bundlesUpdatesChan  chan *bundle.Bundle
@@ -219,13 +220,19 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 				continue
 			}
 
-			compressionTokens := strings.Split(objectMetaData.Description, ":") // obj desc is Content-Encoding:type
-			if len(compressionTokens) != compressionHeaderTokensLength {
-				s.logError(errMissingCompressionType, "missing compression header", objectMetaData)
-				continue
+			compressionType := defaultCompressionType
+
+			if objectMetaData.Description != "" {
+				compressionTokens := strings.Split(objectMetaData.Description, ":") // obj desc is Content-Encoding:type
+				if len(compressionTokens) != compressionHeaderTokensLength {
+					s.logError(errMissingCompressionType, "invalid compression header (Description)", objectMetaData)
+					continue
+				}
+
+				compressionType = compressor.CompressionType(compressionTokens[1])
 			}
 
-			decompressedPayload, err := s.decompressPayload(buf.Bytes(), compressionTokens[1])
+			decompressedPayload, err := s.decompressPayload(buf.Bytes(), compressionType)
 			if err != nil {
 				s.logError(err, "failed to decompress bundle bytes", objectMetaData)
 				continue
@@ -251,10 +258,10 @@ func (s *SyncService) logError(err error, errMsg string, objectMetaData *client.
 		"ObjectDescription", objectMetaData.Description, "Version", objectMetaData.Version)
 }
 
-func (s *SyncService) decompressPayload(payload []byte, msgCompressorType string) ([]byte, error) {
+func (s *SyncService) decompressPayload(payload []byte, msgCompressorType compressor.CompressionType) ([]byte, error) {
 	msgCompressor, found := s.compressorsMap[msgCompressorType]
 	if !found {
-		newCompressor, err := compressor.NewCompressor(compressor.CompressionType(msgCompressorType))
+		newCompressor, err := compressor.NewCompressor(msgCompressorType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create compressor: %w", err)
 		}
