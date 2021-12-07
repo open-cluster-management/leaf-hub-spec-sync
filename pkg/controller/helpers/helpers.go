@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
+	metav2 "k8s.io/klog/v2"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 const (
@@ -24,11 +30,56 @@ func UpdateObject(ctx context.Context, k8sClient client.Client, obj *unstructure
 
 	forceChanges := true
 
+	// checks if the objects namespace already exists or not and creates it if it doesn't.
+	err = createNamespaceIfNotExist(obj)
+	if err != nil {
+		return fmt.Errorf("failed creating new namespace - %w", err)
+	}
+
 	if err := k8sClient.Patch(ctx, obj, client.RawPatch(types.ApplyPatchType, objectBytes), &client.PatchOptions{
 		FieldManager: controllerName,
 		Force:        &forceChanges,
 	}); err != nil {
 		return fmt.Errorf("failed to update object - %w", err)
+	}
+
+	return nil
+}
+
+func createNamespaceIfNotExist(obj metav2.KMetadata) error {
+	newConfig, err := config.GetConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get config - %w", err)
+	}
+
+	clientSet, err := kubernetes.NewForConfig(newConfig)
+	if err != nil {
+		return fmt.Errorf("failed to get clientSet - %w", err)
+	}
+
+	nsName := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: obj.GetNamespace(),
+		},
+	}
+
+	_, err = clientSet.CoreV1().Namespaces().Get(context.Background(), obj.GetNamespace(), metav1.GetOptions{})
+	if err != nil {
+		if !strings.HasSuffix(err.Error(), notFoundErrorSuffix) {
+			return fmt.Errorf("failed to delete object - %w", err)
+		}
+
+		// if get didn't find the namespace then we need to create it
+		helperLogger := ctrl.Log.WithName("Helper")
+		helperLogger.Info(fmt.Sprintf("namespace %s for resource %s does not exist, creating new namespace.",
+			obj.GetNamespace(), obj.GetName()))
+
+		_, err = clientSet.CoreV1().Namespaces().Create(context.Background(), nsName, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed creating namespace - %w", err)
+		}
+
+		helperLogger.Info(fmt.Sprintf("namespace %s created", obj.GetNamespace()))
 	}
 
 	return nil

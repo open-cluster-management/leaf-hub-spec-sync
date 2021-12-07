@@ -39,6 +39,7 @@ rules:
   - pods
   - configmaps
   - events
+  - namespaces
   verbs:
   - create
   - delete
@@ -91,8 +92,6 @@ spec:
       containers:
         - name: leaf-hub-spec-sync
           image: $IMAGE
-          args:
-            - '--zap-devel=true'
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE
@@ -118,8 +117,6 @@ spec:
               value: "$SYNC_SERVICE_PORT"
             - name: SYNC_SERVICE_POLLING_INTERVAL
               value: "5"
-            - name: K8S_CLIENTS_POOL_SIZE
-              value: "$K8S_CLIENTS_POOL_SIZE"
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
