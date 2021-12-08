@@ -161,11 +161,11 @@ func (c *Consumer) CommitAsync(metadata transport.BundleMetadata) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	if commitCandidate, found := c.partitionToOffsetToCommitMap[topicPartition.Partition]; found &&
-		topicPartition.Offset <= commitCandidate {
+	if currentOffset, found := c.partitionToOffsetToCommitMap[topicPartition.Partition]; found &&
+		topicPartition.Offset <= currentOffset {
 		return
 	}
-
+	// given offset is greater than the current one. update offset to commit.
 	c.partitionToOffsetToCommitMap[topicPartition.Partition] = topicPartition.Offset
 }
 
@@ -178,25 +178,24 @@ func (c *Consumer) handleCommits(ctx context.Context) {
 			return
 
 		case <-ticker.C:
-			c.commitMappedOffsets()
+			c.commitConsumedOffsets()
 		}
 	}
 }
 
-func (c *Consumer) commitMappedOffsets() {
-	if topicPartitions := c.getTopicPartitionsToCommit(); topicPartitions != nil {
-		// commit topicPartitions
-		if _, err := c.kafkaConsumer.Consumer().CommitOffsets(topicPartitions); err != nil {
-			c.log.Error(err, "failed to commit offsets", "TopicPartitions", topicPartitions)
+func (c *Consumer) commitConsumedOffsets() {
+	if offsets := c.getOffsetsToCommit(); offsets != nil {
+		// commit offsets
+		if _, err := c.kafkaConsumer.Consumer().CommitOffsets(offsets); err != nil {
+			c.log.Error(err, "failed to commit offsets", "Offsets", offsets)
 			return
 		}
-
 		// update offsets map, delete what's been committed
-		c.removeCommittedTopicPartitionsFromMap(topicPartitions)
+		c.removeCommittedOffsetsFromMap(offsets)
 	}
 }
 
-func (c *Consumer) getTopicPartitionsToCommit() []kafka.TopicPartition {
+func (c *Consumer) getOffsetsToCommit() []kafka.TopicPartition {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -218,7 +217,7 @@ func (c *Consumer) getTopicPartitionsToCommit() []kafka.TopicPartition {
 	return topicPartitions
 }
 
-func (c *Consumer) removeCommittedTopicPartitionsFromMap(topicPartitions []kafka.TopicPartition) {
+func (c *Consumer) removeCommittedOffsetsFromMap(topicPartitions []kafka.TopicPartition) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -284,16 +283,16 @@ func (c *Consumer) logError(err error, errMessage string, msg *kafka.Message) {
 	c.log.Error(err, errMessage, "MessageKey", string(msg.Key), "TopicPartition", msg.TopicPartition)
 }
 
-func (c *Consumer) decompressPayload(payload []byte, msgCompressorType compressor.CompressionType) ([]byte, error) {
-	msgCompressor, found := c.compressorsMap[msgCompressorType]
+func (c *Consumer) decompressPayload(payload []byte, compressionType compressor.CompressionType) ([]byte, error) {
+	msgCompressor, found := c.compressorsMap[compressionType]
 	if !found {
-		newCompressor, err := compressor.NewCompressor(msgCompressorType)
+		newCompressor, err := compressor.NewCompressor(compressionType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create compressor: %w", err)
 		}
 
 		msgCompressor = newCompressor
-		c.compressorsMap[msgCompressorType] = msgCompressor
+		c.compressorsMap[compressionType] = msgCompressor
 	}
 
 	decompressedBytes, err := msgCompressor.Decompress(payload)
