@@ -23,8 +23,8 @@ func NewK8sWorkerPool(log logr.Logger) (*K8sWorkerPool, error) {
 		return nil, fmt.Errorf("failed to get in cluster kubeconfig - %w", err)
 	}
 
-	ctx, cancelContext := context.WithCancel(context.Background())
 	k8sWorkerPoolSize := readEnvVars(log)
+	ctx, cancelContext := context.WithCancel(context.Background())
 
 	return &K8sWorkerPool{
 		ctx:           ctx,
