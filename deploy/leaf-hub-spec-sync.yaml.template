@@ -57,6 +57,18 @@ rules:
   - create
   - update
   - delete
+  - "app.k8s.io"
+  resources:
+  - applications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+  - deletecollection
 ---
 
 kind: ClusterRoleBinding
@@ -109,6 +121,8 @@ spec:
               value: "spec"
             - name: KAFKA_SSL_CA
               value: "$KAFKA_SSL_CA"
+            - name: TRANSPORT_TYPE
+              value: "$TRANSPORT_TYPE"
             - name: SYNC_SERVICE_PROTOCOL
               value: "http"
             - name: SYNC_SERVICE_HOST
