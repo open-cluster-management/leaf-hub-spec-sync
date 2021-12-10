@@ -56,6 +56,19 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - "app.k8s.io"
+  resources:
+  - applications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+  - deletecollection
 ---
 
 kind: ClusterRoleBinding
@@ -98,6 +111,8 @@ spec:
                 fieldRef:
                  apiVersion: v1
                  fieldPath: metadata.namespace
+            - name: TRANSPORT_TYPE
+              value: "$TRANSPORT_TYPE"
             - name: SYNC_SERVICE_PROTOCOL
               value: "http"
             - name: SYNC_SERVICE_HOST
