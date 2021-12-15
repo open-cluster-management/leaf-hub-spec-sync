@@ -51,12 +51,14 @@ Go to the [Contributing guide](CONTRIBUTING.md) to learn how to get involved.
     ```
     $ export TRANSPORT_TYPE=...
     ```
+
 1. If you set kafka as transport, set the following environment variables:
     1. Set `KAFKA_BOOTSTRAP_SERVERS` environment variable to hold the
        address of the brokers to connect to.
         ```
         $ export KAFKA_BOOTSTRAP_SERVERS=...
         ```
+    
     1. If you use secure (SSL/TLS) client authorization, set `KAFKA_SSL_CA` environment variable to hold the
        certificate (PEM format) encoded in base64.
         ```
