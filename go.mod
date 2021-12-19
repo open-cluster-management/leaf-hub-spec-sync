@@ -7,7 +7,7 @@ require (
 	github.com/go-logr/logr v0.2.1
 	github.com/go-logr/zapr v0.2.0 // indirect
 	github.com/open-cluster-management/hub-of-hubs-data-types v0.2.3
-	github.com/open-cluster-management/hub-of-hubs-kafka-transport v0.0.0-20211123103330-4a0b4f760f84
+	github.com/open-cluster-management/hub-of-hubs-kafka-transport v0.2.0
 	github.com/open-cluster-management/hub-of-hubs-message-compression v0.2.0
 	github.com/open-horizon/edge-sync-service-client v0.0.0-20190711093406-dc3a19905da2
 	github.com/open-horizon/edge-utilities v0.0.0-20190711093331-0908b45a7152 // indirect

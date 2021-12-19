@@ -12,9 +12,9 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/go-logr/logr"
 	datatypes "github.com/open-cluster-management/hub-of-hubs-data-types"
+	"github.com/open-cluster-management/hub-of-hubs-kafka-transport/headers"
 	kafkaclient "github.com/open-cluster-management/hub-of-hubs-kafka-transport/kafka-client"
 	kafkaconsumer "github.com/open-cluster-management/hub-of-hubs-kafka-transport/kafka-client/kafka-consumer"
-	kafkaHeaderTypes "github.com/open-cluster-management/hub-of-hubs-kafka-transport/types"
 	compressor "github.com/open-cluster-management/hub-of-hubs-message-compression"
 	"github.com/open-cluster-management/hub-of-hubs-message-compression/compressors"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
@@ -50,7 +50,7 @@ func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.Bundle) (*Consu
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
 
-	if err := kafkaConsumer.Subscribe([]string{topic}); err != nil {
+	if err := kafkaConsumer.Subscribe(topic); err != nil {
 		close(msgChan)
 		kafkaConsumer.Close()
 
@@ -244,7 +244,7 @@ func (c *Consumer) handleKafkaMessages(ctx context.Context) {
 func (c *Consumer) processMessage(msg *kafka.Message) {
 	compressionType := defaultCompressionType
 
-	if compressionTypeBytes, found := c.lookupHeaderValue(msg, kafkaHeaderTypes.HeaderCompressionType); found {
+	if compressionTypeBytes, found := c.lookupHeaderValue(msg, headers.CompressionType); found {
 		compressionType = compressor.CompressionType(compressionTypeBytes)
 	}
 
