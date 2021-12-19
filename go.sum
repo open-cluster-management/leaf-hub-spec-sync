@@ -674,8 +674,8 @@ github.com/onsi/gomega v1.9.0/go.mod h1:Ho0h+IUsWyvy1OpqCwxlQ/21gkhVunqlU8fDGcoT
 github.com/onsi/gomega v1.10.1/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1ybHNo=
 github.com/open-cluster-management/api v0.0.0-20200610161514-939cead3902c/go.mod h1:+vUECYB7WkfCb52r0J7rxgD1mseSGAqGi8rTLLRcbgw=
 github.com/open-cluster-management/governance-policy-propagator v0.0.0-20210520203318-a78632de1e26/go.mod h1:7gzDyC7PddcuInXS+kLrfYmto/ImSORibXwy8RGjNM8=
-github.com/open-cluster-management/hub-of-hubs-data-types v0.2.2 h1:lgRG/84QKTW38W0ynu+yeYwkTswqWNGka0QMX2B5yTk=
-github.com/open-cluster-management/hub-of-hubs-data-types v0.2.2/go.mod h1:rLtZFQ8YdGQ2XHHKJFBOtQwnP63UDxaalhlQG8anP90=
+github.com/open-cluster-management/hub-of-hubs-data-types v0.2.3 h1:SzaZe7XnwpRXRbfq5DQOzaEu7BsKJZwgGMGnVs2Lks0=
+github.com/open-cluster-management/hub-of-hubs-data-types v0.2.3/go.mod h1:rLtZFQ8YdGQ2XHHKJFBOtQwnP63UDxaalhlQG8anP90=
 github.com/open-cluster-management/hub-of-hubs-kafka-transport v0.0.0-20211123103330-4a0b4f760f84 h1:bPuGLWWjMmSRqbPHjmC9P/8dhCzOGGwLp/g9WioihW0=
 github.com/open-cluster-management/hub-of-hubs-kafka-transport v0.0.0-20211123103330-4a0b4f760f84/go.mod h1:Fhdc1zx1GwFuDn5p+KvWZ7fvhSvLet2Fr4cYdA3RUyI=
 github.com/open-cluster-management/hub-of-hubs-message-compression v0.2.0 h1:4hfoRKzamHU/JdwNdvMhUIbmyYprAMuNyMYfwCaphAo=
