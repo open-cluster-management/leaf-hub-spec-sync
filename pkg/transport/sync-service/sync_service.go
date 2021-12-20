@@ -28,7 +28,7 @@ const (
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
 	compressionHeaderTokensLength    = 2
 	defaultCompressionType           = compressor.NoOp
-	committerInterval                = time.Second * 20
+	committerInterval                = time.Second * 60
 )
 
 var (
@@ -81,7 +81,7 @@ func readEnvVars() (string, string, uint16, int, error) {
 	}
 
 	port, err := strconv.Atoi(portString)
-	if err != nil {
+	if err != nil || port < 0 {
 		return "", "", 0, 0, fmt.Errorf("the environment var %s is not valid port - %w", envVarSyncServicePort,
 			err)
 	}
@@ -92,8 +92,8 @@ func readEnvVars() (string, string, uint16, int, error) {
 	}
 
 	pollingInterval, err := strconv.Atoi(pollingIntervalString)
-	if err != nil {
-		return "", "", 0, 0, fmt.Errorf("the environment var %s is not valid port - %w",
+	if err != nil || pollingInterval < 0 {
+		return "", "", 0, 0, fmt.Errorf("the environment var %s is not valid interval - %w",
 			envVarSyncServicePollingInterval, err)
 	}
 
@@ -135,7 +135,7 @@ func (s *SyncService) Stop() {
 
 // CommitAsync commits a transported message that was processed locally.
 func (s *SyncService) CommitAsync(metadata transport.BundleMetadata) {
-	objectMetadata, ok := metadata.(client.ObjectMetaData)
+	objectMetadata, ok := metadata.(*client.ObjectMetaData)
 	if !ok {
 		return // shouldn't happen
 	}
@@ -143,7 +143,7 @@ func (s *SyncService) CommitAsync(metadata transport.BundleMetadata) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	s.commitMap[fmt.Sprintf("%s.%s", objectMetadata.ObjectType, objectMetadata.ObjectID)] = &objectMetadata
+	s.commitMap[fmt.Sprintf("%s.%s", objectMetadata.ObjectType, objectMetadata.ObjectID)] = objectMetadata
 }
 
 func (s *SyncService) handleCommits(ctx context.Context) {
@@ -155,12 +155,12 @@ func (s *SyncService) handleCommits(ctx context.Context) {
 			return
 
 		case <-ticker.C:
-			s.commitMappedObjectMetadata()
+			s.commitHandledBundles()
 		}
 	}
 }
 
-func (s *SyncService) commitMappedObjectMetadata() {
+func (s *SyncService) commitHandledBundles() {
 	if objectMetadataToCommit := s.getObjectMetadataToCommit(); objectMetadataToCommit != nil {
 		// commit object-metadata
 		for _, objectMetadata := range objectMetadataToCommit {
@@ -222,10 +222,12 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 
 			compressionType := defaultCompressionType
 
-			if objectMetaData.Description != "" {
-				compressionTokens := strings.Split(objectMetaData.Description, ":") // obj desc is Content-Encoding:type
+			if objectMetaData.Description != "" { // obj desc is Content-Encoding:type
+				compressionTokens := strings.Split(objectMetaData.Description, ":")
 				if len(compressionTokens) != compressionHeaderTokensLength {
-					s.logError(errMissingCompressionType, "invalid compression header (Description)", objectMetaData)
+					s.logError(errMissingCompressionType, "invalid compression header (Description)",
+						objectMetaData)
+
 					continue
 				}
 
@@ -258,16 +260,16 @@ func (s *SyncService) logError(err error, errMsg string, objectMetaData *client.
 		"ObjectDescription", objectMetaData.Description, "Version", objectMetaData.Version)
 }
 
-func (s *SyncService) decompressPayload(payload []byte, msgCompressorType compressor.CompressionType) ([]byte, error) {
-	msgCompressor, found := s.compressorsMap[msgCompressorType]
+func (s *SyncService) decompressPayload(payload []byte, compressionType compressor.CompressionType) ([]byte, error) {
+	msgCompressor, found := s.compressorsMap[compressionType]
 	if !found {
-		newCompressor, err := compressor.NewCompressor(msgCompressorType)
+		newCompressor, err := compressor.NewCompressor(compressionType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create compressor: %w", err)
 		}
 
 		msgCompressor = newCompressor
-		s.compressorsMap[msgCompressorType] = msgCompressor
+		s.compressorsMap[compressionType] = msgCompressor
 	}
 
 	decompressedBytes, err := msgCompressor.Decompress(payload)

@@ -12,9 +12,9 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/go-logr/logr"
 	datatypes "github.com/open-cluster-management/hub-of-hubs-data-types"
+	"github.com/open-cluster-management/hub-of-hubs-kafka-transport/headers"
 	kafkaclient "github.com/open-cluster-management/hub-of-hubs-kafka-transport/kafka-client"
 	kafkaconsumer "github.com/open-cluster-management/hub-of-hubs-kafka-transport/kafka-client/kafka-consumer"
-	kafkaHeaderTypes "github.com/open-cluster-management/hub-of-hubs-kafka-transport/types"
 	compressor "github.com/open-cluster-management/hub-of-hubs-message-compression"
 	"github.com/open-cluster-management/hub-of-hubs-message-compression/compressors"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
@@ -50,7 +50,7 @@ func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.Bundle) (*Consu
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
 
-	if err := kafkaConsumer.Subscribe([]string{topic}); err != nil {
+	if err := kafkaConsumer.Subscribe(topic); err != nil {
 		close(msgChan)
 		kafkaConsumer.Close()
 
@@ -161,11 +161,11 @@ func (c *Consumer) CommitAsync(metadata transport.BundleMetadata) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	if commitCandidate, found := c.partitionToOffsetToCommitMap[topicPartition.Partition]; found &&
-		topicPartition.Offset <= commitCandidate {
+	if currentOffset, found := c.partitionToOffsetToCommitMap[topicPartition.Partition]; found &&
+		topicPartition.Offset <= currentOffset {
 		return
 	}
-
+	// given offset is greater than the current one. update offset to commit.
 	c.partitionToOffsetToCommitMap[topicPartition.Partition] = topicPartition.Offset
 }
 
@@ -178,25 +178,24 @@ func (c *Consumer) handleCommits(ctx context.Context) {
 			return
 
 		case <-ticker.C:
-			c.commitMappedOffsets()
+			c.commitConsumedOffsets()
 		}
 	}
 }
 
-func (c *Consumer) commitMappedOffsets() {
-	if topicPartitions := c.getTopicPartitionsToCommit(); topicPartitions != nil {
-		// commit topicPartitions
-		if _, err := c.kafkaConsumer.Consumer().CommitOffsets(topicPartitions); err != nil {
-			c.log.Error(err, "failed to commit offsets", "TopicPartitions", topicPartitions)
+func (c *Consumer) commitConsumedOffsets() {
+	if offsets := c.getOffsetsToCommit(); offsets != nil {
+		// commit offsets
+		if _, err := c.kafkaConsumer.Consumer().CommitOffsets(offsets); err != nil {
+			c.log.Error(err, "failed to commit offsets", "Offsets", offsets)
 			return
 		}
-
 		// update offsets map, delete what's been committed
-		c.removeCommittedTopicPartitionsFromMap(topicPartitions)
+		c.removeCommittedOffsetsFromMap(offsets)
 	}
 }
 
-func (c *Consumer) getTopicPartitionsToCommit() []kafka.TopicPartition {
+func (c *Consumer) getOffsetsToCommit() []kafka.TopicPartition {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -218,7 +217,7 @@ func (c *Consumer) getTopicPartitionsToCommit() []kafka.TopicPartition {
 	return topicPartitions
 }
 
-func (c *Consumer) removeCommittedTopicPartitionsFromMap(topicPartitions []kafka.TopicPartition) {
+func (c *Consumer) removeCommittedOffsetsFromMap(topicPartitions []kafka.TopicPartition) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -245,7 +244,7 @@ func (c *Consumer) handleKafkaMessages(ctx context.Context) {
 func (c *Consumer) processMessage(msg *kafka.Message) {
 	compressionType := defaultCompressionType
 
-	if compressionTypeBytes, found := c.lookupHeaderValue(msg, kafkaHeaderTypes.HeaderCompressionType); found {
+	if compressionTypeBytes, found := c.lookupHeaderValue(msg, headers.CompressionType); found {
 		compressionType = compressor.CompressionType(compressionTypeBytes)
 	}
 
@@ -284,16 +283,16 @@ func (c *Consumer) logError(err error, errMessage string, msg *kafka.Message) {
 	c.log.Error(err, errMessage, "MessageKey", string(msg.Key), "TopicPartition", msg.TopicPartition)
 }
 
-func (c *Consumer) decompressPayload(payload []byte, msgCompressorType compressor.CompressionType) ([]byte, error) {
-	msgCompressor, found := c.compressorsMap[msgCompressorType]
+func (c *Consumer) decompressPayload(payload []byte, compressionType compressor.CompressionType) ([]byte, error) {
+	msgCompressor, found := c.compressorsMap[compressionType]
 	if !found {
-		newCompressor, err := compressor.NewCompressor(msgCompressorType)
+		newCompressor, err := compressor.NewCompressor(compressionType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create compressor: %w", err)
 		}
 
 		msgCompressor = newCompressor
-		c.compressorsMap[msgCompressorType] = msgCompressor
+		c.compressorsMap[compressionType] = msgCompressor
 	}
 
 	decompressedBytes, err := msgCompressor.Decompress(payload)
