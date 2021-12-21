@@ -103,8 +103,6 @@ spec:
               value: "$LH_ID"
             - name: TRANSPORT_TYPE
               value: "$TRANSPORT_TYPE"
-            - name: KAFKA_CONSUMER_ID
-              value: "$LH_ID"
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "$KAFKA_BOOTSTRAP_SERVERS"
             - name: KAFKA_TOPIC
@@ -120,7 +118,7 @@ spec:
             - name: SYNC_SERVICE_POLLING_INTERVAL
               value: "5"
             - name: K8S_CLIENTS_POOL_SIZE
-              value: "$K8S_CLIENTS_POOL_SIZE"
+              value: "3"
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:

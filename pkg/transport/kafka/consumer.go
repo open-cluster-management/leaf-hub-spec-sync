@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	envVarKafkaConsumerID       = "KAFKA_CONSUMER_ID"
+	envVarLeafHubID             = "LH_ID"
 	envVarKafkaBootstrapServers = "KAFKA_BOOTSTRAP_SERVERS"
 	envVarKafkaSSLCA            = "KAFKA_SSL_CA"
 	envVarKafkaTopic            = "KAFKA_TOPIC"
@@ -74,9 +74,9 @@ func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.Bundle) (*Consu
 }
 
 func readEnvVars() (*kafka.ConfigMap, string, error) {
-	consumerID, found := os.LookupEnv(envVarKafkaConsumerID)
+	consumerID, found := os.LookupEnv(envVarLeafHubID)
 	if !found {
-		return nil, "", fmt.Errorf("%w: %s", errEnvVarNotFound, envVarKafkaConsumerID)
+		return nil, "", fmt.Errorf("%w: %s", errEnvVarNotFound, envVarLeafHubID)
 	}
 
 	bootstrapServers, found := os.LookupEnv(envVarKafkaBootstrapServers)
