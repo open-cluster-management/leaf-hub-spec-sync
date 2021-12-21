@@ -1,12 +1,4 @@
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: hoh-system
-  labels:
-    name: hoh-system
----
-
-apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: leaf-hub-spec-sync
