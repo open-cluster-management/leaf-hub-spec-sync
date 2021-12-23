@@ -274,7 +274,7 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 
 		c.bundlesUpdatesChan <- receivedBundle.WithMetadata(msg.TopicPartition)
 	default:
-		c.log.Error(errReceivedUnsupportedBundleType, "MessageID", transportMsg.ID,
+		c.log.Error(errReceivedUnsupportedBundleType, "skipped received message", "MessageID", transportMsg.ID,
 			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
 	}
 }
