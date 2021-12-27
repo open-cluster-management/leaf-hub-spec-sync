@@ -90,11 +90,13 @@ func readEnvVars() (*kafka.ConfigMap, string, error) {
 	}
 
 	kafkaConfigMap := &kafka.ConfigMap{
-		"bootstrap.servers":  bootstrapServers,
-		"client.id":          consumerID,
-		"group.id":           consumerID,
-		"auto.offset.reset":  "earliest",
-		"enable.auto.commit": "false",
+		"bootstrap.servers":       bootstrapServers,
+		"client.id":               consumerID,
+		"group.id":                consumerID,
+		"auto.offset.reset":       "earliest",
+		"enable.auto.commit":      "false",
+		"socket.keepalive.enable": "true",
+		"log.connection.close":    "false", // silence spontaneous disconnection logs, kafka recovers by itself.
 	}
 
 	if sslBase64EncodedCertificate, found := os.LookupEnv(envVarKafkaSSLCA); found {
