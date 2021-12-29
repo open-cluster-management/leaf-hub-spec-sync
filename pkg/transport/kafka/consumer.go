@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/go-logr/logr"
@@ -27,7 +26,6 @@ const (
 	envVarKafkaSSLCA            = "KAFKA_SSL_CA"
 	envVarKafkaTopic            = "KAFKA_TOPIC"
 	defaultCompressionType      = compressor.NoOp
-	committerInterval           = time.Second * 20
 )
 
 var (
@@ -139,7 +137,6 @@ type Consumer struct {
 // Start function starts the consumer.
 func (c *Consumer) Start() {
 	c.startOnce.Do(func() {
-		go c.handleCommits(c.ctx)
 		go c.handleKafkaMessages(c.ctx)
 	})
 }
@@ -151,84 +148,6 @@ func (c *Consumer) Stop() {
 		close(c.msgChan)
 		c.kafkaConsumer.Close()
 	})
-}
-
-// CommitAsync commits a transported message that was processed locally.
-func (c *Consumer) CommitAsync(metadata transport.BundleMetadata) {
-	topicPartition, ok := metadata.(kafka.TopicPartition)
-	if !ok {
-		return // shouldn't happen
-	}
-
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	if currentOffset, found := c.partitionToOffsetToCommitMap[topicPartition.Partition]; found &&
-		topicPartition.Offset <= currentOffset {
-		return
-	}
-	// given offset is greater than the current one. update offset to commit.
-	c.partitionToOffsetToCommitMap[topicPartition.Partition] = topicPartition.Offset
-}
-
-func (c *Consumer) handleCommits(ctx context.Context) {
-	ticker := time.NewTicker(committerInterval)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case <-ticker.C:
-			c.commitConsumedOffsets()
-		}
-	}
-}
-
-func (c *Consumer) commitConsumedOffsets() {
-	if offsets := c.getOffsetsToCommit(); offsets != nil {
-		// commit offsets
-		if _, err := c.kafkaConsumer.Consumer().CommitOffsets(offsets); err != nil {
-			c.log.Error(err, "failed to commit offsets", "Offsets", offsets)
-			return
-		}
-		// update offsets map, delete what's been committed
-		c.removeCommittedOffsetsFromMap(offsets)
-	}
-}
-
-func (c *Consumer) getOffsetsToCommit() []kafka.TopicPartition {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	if len(c.partitionToOffsetToCommitMap) == 0 {
-		return nil
-	}
-
-	topicPartitions := make([]kafka.TopicPartition, 0, len(c.partitionToOffsetToCommitMap))
-
-	// prepare batch for committing
-	for partition, highestOffset := range c.partitionToOffsetToCommitMap {
-		topicPartitions = append(topicPartitions, kafka.TopicPartition{
-			Topic:     &c.topic,
-			Partition: partition,
-			Offset:    highestOffset + 1, // kafka re-processes the committed offset on restart, so +1 to avoid that.
-		})
-	}
-
-	return topicPartitions
-}
-
-func (c *Consumer) removeCommittedOffsetsFromMap(topicPartitions []kafka.TopicPartition) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	for _, topicPartition := range topicPartitions {
-		if c.partitionToOffsetToCommitMap[topicPartition.Partition] == topicPartition.Offset {
-			// no new offsets processed on this partition, delete from map
-			delete(c.partitionToOffsetToCommitMap, topicPartition.Partition)
-		}
-	}
 }
 
 func (c *Consumer) handleKafkaMessages(ctx context.Context) {
@@ -274,7 +193,7 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 			return
 		}
 
-		c.bundlesUpdatesChan <- receivedBundle.WithMetadata(msg.TopicPartition)
+		c.bundlesUpdatesChan <- receivedBundle
 	default:
 		c.log.Error(errReceivedUnsupportedBundleType, "skipped received message", "MessageID", transportMsg.ID,
 			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)

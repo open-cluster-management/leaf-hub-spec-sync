@@ -10,14 +10,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/go-logr/logr"
 	datatypes "github.com/open-cluster-management/hub-of-hubs-data-types"
 	compressor "github.com/open-cluster-management/hub-of-hubs-message-compression"
 	"github.com/open-cluster-management/hub-of-hubs-message-compression/compressors"
 	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
 	"github.com/open-horizon/edge-sync-service-client/client"
 )
 
@@ -28,7 +26,6 @@ const (
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
 	compressionHeaderTokensLength    = 2
 	defaultCompressionType           = compressor.NoOp
-	committerInterval                = time.Second * 60
 )
 
 var (
@@ -120,7 +117,6 @@ type SyncService struct {
 // Start function starts sync service.
 func (s *SyncService) Start() {
 	s.startOnce.Do(func() {
-		go s.handleCommits(s.ctx)
 		go s.handleBundles(s.ctx)
 	})
 }
@@ -131,78 +127,6 @@ func (s *SyncService) Stop() {
 		s.cancelFunc()
 		close(s.bundlesMetaDataChan)
 	})
-}
-
-// CommitAsync commits a transported message that was processed locally.
-func (s *SyncService) CommitAsync(metadata transport.BundleMetadata) {
-	objectMetadata, ok := metadata.(*client.ObjectMetaData)
-	if !ok {
-		return // shouldn't happen
-	}
-
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	s.commitMap[fmt.Sprintf("%s.%s", objectMetadata.ObjectType, objectMetadata.ObjectID)] = objectMetadata
-}
-
-func (s *SyncService) handleCommits(ctx context.Context) {
-	ticker := time.NewTicker(committerInterval)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case <-ticker.C:
-			s.commitHandledBundles()
-		}
-	}
-}
-
-func (s *SyncService) commitHandledBundles() {
-	if objectMetadataToCommit := s.getObjectMetadataToCommit(); objectMetadataToCommit != nil {
-		// commit object-metadata
-		for _, objectMetadata := range objectMetadataToCommit {
-			if err := s.client.MarkObjectConsumed(objectMetadata); err != nil {
-				// if one fails, return and retry in next cycle
-				s.log.Error(err, "failed to commit", "ObjectMetadata", objectMetadata)
-				return
-			}
-		}
-
-		// update metadata map, delete what's been committed
-		s.removeCommittedObjectMetadataFromMap(objectMetadataToCommit)
-	}
-}
-
-func (s *SyncService) getObjectMetadataToCommit() []*client.ObjectMetaData {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	if len(s.commitMap) == 0 {
-		return nil
-	}
-
-	objectMetadataToCommit := make([]*client.ObjectMetaData, 0, len(s.commitMap))
-	for _, objectMetadata := range s.commitMap {
-		objectMetadataToCommit = append(objectMetadataToCommit, objectMetadata)
-	}
-
-	return objectMetadataToCommit
-}
-
-func (s *SyncService) removeCommittedObjectMetadataFromMap(committedObjectMetadata []*client.ObjectMetaData) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	for _, objectMetadata := range committedObjectMetadata {
-		objectIdentifier := fmt.Sprintf("%s.%s", objectMetadata.ObjectType, objectMetadata.ObjectID)
-		if s.commitMap[objectIdentifier] == objectMetadata {
-			// no new object processed for this type, delete from map
-			delete(s.commitMap, objectIdentifier)
-		}
-	}
 }
 
 func (s *SyncService) handleBundles(ctx context.Context) {
@@ -246,7 +170,7 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 				continue
 			}
 
-			s.bundlesUpdatesChan <- receivedBundle.WithMetadata(objectMetaData)
+			s.bundlesUpdatesChan <- receivedBundle
 
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
 				s.logError(err, "failed to report object received to sync service", objectMetaData)

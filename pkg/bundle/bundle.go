@@ -1,7 +1,6 @@
 package bundle
 
 import (
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -14,11 +13,4 @@ func NewBundle() *Bundle {
 type Bundle struct {
 	Objects        []*unstructured.Unstructured `json:"objects"`
 	DeletedObjects []*unstructured.Unstructured `json:"deletedObjects"`
-	transport.BundleMetadata
-}
-
-// WithMetadata adds metadata to the bundle object.
-func (bundle *Bundle) WithMetadata(metadata transport.BundleMetadata) *Bundle {
-	bundle.BundleMetadata = metadata
-	return bundle
 }

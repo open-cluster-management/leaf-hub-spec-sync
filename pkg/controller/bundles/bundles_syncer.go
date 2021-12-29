@@ -92,8 +92,6 @@ func (syncer *BundleSpecSync) sync(ctx context.Context) {
 			}
 			// ensure all updates and deletes have finished before reading next bundle
 			syncer.bundleProcessingWaitingGroup.Wait()
-			// mark bundle as committed since it was fully processed
-			syncer.transport.CommitAsync(receivedBundle.BundleMetadata)
 		}
 	}
 }
