@@ -47,9 +47,7 @@ type BundleSpecSync struct {
 }
 
 // Start function starts bundles spec syncer.
-func (syncer *BundleSpecSync) Start(stopChannel <-chan struct{}) error {
-	ctx, cancelContext := context.WithCancel(context.Background())
-	defer cancelContext()
+func (syncer *BundleSpecSync) Start(ctx context.Context) error {
 	defer syncer.k8sWorkerPool.Stop() // verify that if pool start fails at any point it will get cleaned
 
 	if err := syncer.k8sWorkerPool.Start(); err != nil {
@@ -58,7 +56,7 @@ func (syncer *BundleSpecSync) Start(stopChannel <-chan struct{}) error {
 
 	go syncer.sync(ctx)
 
-	<-stopChannel // blocking wait for stop event
+	<-ctx.Done() // blocking wait for stop event
 	syncer.log.Info("stopped bundles syncer")
 
 	return nil
