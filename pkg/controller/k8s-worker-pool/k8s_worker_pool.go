@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
@@ -15,8 +16,8 @@ const (
 	defaultK8sClientsPoolSize = 10
 )
 
-// NewK8sWorkerPool returns a new k8s workers pool.
-func NewK8sWorkerPool(log logr.Logger) (*K8sWorkerPool, error) {
+// AddK8sWorkerPool adds k8s workers pool to the manager and returns it.
+func AddK8sWorkerPool(log logr.Logger, mgr ctrl.Manager) (*K8sWorkerPool, error) {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -24,16 +25,19 @@ func NewK8sWorkerPool(log logr.Logger) (*K8sWorkerPool, error) {
 	}
 
 	k8sWorkerPoolSize := readEnvVars(log)
-	ctx, cancelContext := context.WithCancel(context.Background())
 
-	return &K8sWorkerPool{
-		ctx:           ctx,
-		log:           log,
-		cancelContext: cancelContext,
-		kubeConfig:    config,
-		jobsQueue:     make(chan *K8sJob, k8sWorkerPoolSize), // each worker can handle at most one job at a time.
-		poolSize:      k8sWorkerPoolSize,
-	}, nil
+	k8sWorkerPool := &K8sWorkerPool{
+		log:        log,
+		kubeConfig: config,
+		jobsQueue:  make(chan *K8sJob, k8sWorkerPoolSize), // each worker can handle at most one job at a time.
+		poolSize:   k8sWorkerPoolSize,
+	}
+
+	if err := mgr.Add(k8sWorkerPool); err != nil {
+		return nil, fmt.Errorf("failed to initialize k8s workers pool - %w", err)
+	}
+
+	return k8sWorkerPool, nil
 }
 
 func readEnvVars(log logr.Logger) int {
@@ -58,32 +62,29 @@ func readEnvVars(log logr.Logger) int {
 
 // K8sWorkerPool pool that creates all k8s workers and the assigns k8s jobs to available workers.
 type K8sWorkerPool struct {
-	ctx           context.Context
-	log           logr.Logger
-	cancelContext context.CancelFunc
-	kubeConfig    *rest.Config
-	jobsQueue     chan *K8sJob
-	poolSize      int
+	log        logr.Logger
+	kubeConfig *rest.Config
+	jobsQueue  chan *K8sJob
+	poolSize   int
 }
 
 // Start function starts the k8s workers pool.
-func (pool *K8sWorkerPool) Start() error {
+func (pool *K8sWorkerPool) Start(ctx context.Context) error {
 	for i := 1; i <= pool.poolSize; i++ {
 		worker, err := newK8sWorker(pool.log, i, pool.kubeConfig, pool.jobsQueue)
 		if err != nil {
 			return fmt.Errorf("failed to start k8s workers pool - %w", err)
 		}
 
-		worker.start(pool.ctx)
+		worker.start(ctx)
 	}
 
-	return nil
-}
+	<-ctx.Done() // blocking wait for stop event
 
-// Stop function stops all the K8sWorkers in the pool.
-func (pool *K8sWorkerPool) Stop() {
-	pool.cancelContext() // worker pool is responsible for stopping it's workers, it's done using context
+	// context was cancelled, do cleanup
 	close(pool.jobsQueue)
+
+	return nil
 }
 
 // RunAsync inserts the K8sJob into the working queue.

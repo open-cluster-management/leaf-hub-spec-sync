@@ -129,8 +129,8 @@ func createManager(leaderElectionNamespace string, transport transport.Transport
 		return nil, fmt.Errorf("failed to create a new manager: %w", err)
 	}
 
-	if err := controller.AddSpecSyncers(mgr, transport, bundleUpdatesChan); err != nil {
-		return nil, fmt.Errorf("failed to add spec syncers: %w", err)
+	if err := controller.AddSpecSyncer(mgr, transport, bundleUpdatesChan); err != nil {
+		return nil, fmt.Errorf("failed to add spec syncer: %w", err)
 	}
 
 	return mgr, nil

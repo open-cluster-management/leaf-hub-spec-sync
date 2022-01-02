@@ -9,7 +9,7 @@ func NewBundle() *Bundle {
 	return &Bundle{}
 }
 
-// Bundle is a bundle received from transport containing received Objects/DeletedObjects and transport BundleMetadata.
+// Bundle bundle received from transport containing received Objects/DeletedObjects.
 type Bundle struct {
 	Objects        []*unstructured.Unstructured `json:"objects"`
 	DeletedObjects []*unstructured.Unstructured `json:"deletedObjects"`

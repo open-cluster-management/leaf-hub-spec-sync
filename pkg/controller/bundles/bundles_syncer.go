@@ -17,13 +17,7 @@ import (
 
 // AddBundleSpecSync adds BundleSpecSync to the manager.
 func AddBundleSpecSync(log logr.Logger, mgr ctrl.Manager, transport transport.Transport,
-	bundleUpdatesChan chan *bundle.Bundle) error {
-	// create k8s worker pool
-	k8sWorkerPool, err := k8sworkerpool.NewK8sWorkerPool(log)
-	if err != nil {
-		return fmt.Errorf("failed to initialize bundle spec syncer - %w", err)
-	}
-
+	bundleUpdatesChan chan *bundle.Bundle, k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
 	if err := mgr.Add(&BundleSpecSync{
 		log:                          log,
 		transport:                    transport,
@@ -48,11 +42,7 @@ type BundleSpecSync struct {
 
 // Start function starts bundles spec syncer.
 func (syncer *BundleSpecSync) Start(ctx context.Context) error {
-	defer syncer.k8sWorkerPool.Stop() // verify that if pool start fails at any point it will get cleaned
-
-	if err := syncer.k8sWorkerPool.Start(); err != nil {
-		return fmt.Errorf("failed to start bundles spec syncer - %w", err)
-	}
+	syncer.log.Info("started bundles syncer...")
 
 	go syncer.sync(ctx)
 
@@ -63,8 +53,6 @@ func (syncer *BundleSpecSync) Start(ctx context.Context) error {
 }
 
 func (syncer *BundleSpecSync) sync(ctx context.Context) {
-	syncer.log.Info("start bundles syncing...")
-
 	for {
 		select {
 		case <-ctx.Done(): // we have received a signal to stop
