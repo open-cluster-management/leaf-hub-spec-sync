@@ -57,6 +57,7 @@ rules:
   - create
   - update
   - delete
+- apiGroups:
   - "app.k8s.io"
   resources:
   - applications
@@ -104,6 +105,8 @@ spec:
       containers:
         - name: leaf-hub-spec-sync
           image: $IMAGE
+          args:
+            - '--zap-devel=true'
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE
@@ -121,8 +124,6 @@ spec:
               value: "spec"
             - name: KAFKA_SSL_CA
               value: "$KAFKA_SSL_CA"
-            - name: TRANSPORT_TYPE
-              value: "$TRANSPORT_TYPE"
             - name: SYNC_SERVICE_PROTOCOL
               value: "http"
             - name: SYNC_SERVICE_HOST
@@ -131,6 +132,8 @@ spec:
               value: "$SYNC_SERVICE_PORT"
             - name: SYNC_SERVICE_POLLING_INTERVAL
               value: "5"
+            - name: K8S_CLIENTS_POOL_SIZE
+              value: "$K8S_CLIENTS_POOL_SIZE"
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:

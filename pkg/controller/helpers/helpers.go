@@ -31,7 +31,7 @@ func UpdateObject(ctx context.Context, k8sClient client.Client, obj *unstructure
 	forceChanges := true
 
 	// checks if the objects namespace already exists or not and creates it if it doesn't.
-	err = createNamespaceIfNotExist(obj)
+	err = createNamespaceIfNotExist(ctx, obj)
 	if err != nil {
 		return fmt.Errorf("failed creating new namespace - %w", err)
 	}
@@ -46,7 +46,7 @@ func UpdateObject(ctx context.Context, k8sClient client.Client, obj *unstructure
 	return nil
 }
 
-func createNamespaceIfNotExist(obj metav2.KMetadata) error {
+func createNamespaceIfNotExist(ctx context.Context, obj metav2.KMetadata) error {
 	newConfig, err := config.GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get config - %w", err)
@@ -63,7 +63,7 @@ func createNamespaceIfNotExist(obj metav2.KMetadata) error {
 		},
 	}
 
-	_, err = clientSet.CoreV1().Namespaces().Get(context.Background(), obj.GetNamespace(), metav1.GetOptions{})
+	_, err = clientSet.CoreV1().Namespaces().Get(ctx, obj.GetNamespace(), metav1.GetOptions{})
 	if err != nil {
 		if !strings.HasSuffix(err.Error(), notFoundErrorSuffix) {
 			return fmt.Errorf("failed to delete object - %w", err)
@@ -74,7 +74,7 @@ func createNamespaceIfNotExist(obj metav2.KMetadata) error {
 		helperLogger.Info(fmt.Sprintf("namespace %s for resource %s does not exist, creating new namespace.",
 			obj.GetNamespace(), obj.GetName()))
 
-		_, err = clientSet.CoreV1().Namespaces().Create(context.Background(), nsName, metav1.CreateOptions{})
+		_, err = clientSet.CoreV1().Namespaces().Create(ctx, nsName, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("failed creating namespace - %w", err)
 		}
@@ -82,6 +82,7 @@ func createNamespaceIfNotExist(obj metav2.KMetadata) error {
 		helperLogger.Info(fmt.Sprintf("namespace %s created", obj.GetNamespace()))
 	}
 
+	// otherwise, we found the namespace so we can return
 	return nil
 }
 
