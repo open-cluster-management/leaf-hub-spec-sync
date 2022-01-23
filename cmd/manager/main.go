@@ -8,14 +8,14 @@ import (
 	"runtime"
 
 	"github.com/go-logr/logr"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/kafka"
-	syncservice "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport/sync-service"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 	"github.com/spf13/pflag"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport/kafka"
+	syncservice "github.com/stolostron/leaf-hub-spec-sync/pkg/transport/sync-service"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	_ "k8s.io/client-go/plugin/pkg/client/auth"

@@ -3,10 +3,10 @@ package controller
 import (
 	"fmt"
 
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller/bundles"
-	k8sworkerpool "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/bundles"
+	k8sworkerpool "github.com/stolostron/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 

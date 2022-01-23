@@ -12,11 +12,11 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	datatypes "github.com/open-cluster-management/hub-of-hubs-data-types"
-	compressor "github.com/open-cluster-management/hub-of-hubs-message-compression"
-	"github.com/open-cluster-management/hub-of-hubs-message-compression/compressors"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/open-horizon/edge-sync-service-client/client"
+	datatypes "github.com/stolostron/hub-of-hubs-data-types"
+	compressor "github.com/stolostron/hub-of-hubs-message-compression"
+	"github.com/stolostron/hub-of-hubs-message-compression/compressors"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
 )
 
 const (
