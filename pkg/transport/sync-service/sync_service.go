@@ -16,7 +16,6 @@ import (
 	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	compressor "github.com/stolostron/hub-of-hubs-message-compression"
 	"github.com/stolostron/hub-of-hubs-message-compression/compressors"
-	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
 )
 
 const (
@@ -29,13 +28,14 @@ const (
 )
 
 var (
-	errEnvVarNotFound         = errors.New("environment variable not found")
-	errMissingCompressionType = errors.New("compression type is missing from message description")
-	errSyncServiceReadFailed  = errors.New("sync service error")
+	errEnvVarNotFound                = errors.New("environment variable not found")
+	errReceivedUnsupportedBundleType = errors.New("received unsupported message type")
+	errMissingCompressionType        = errors.New("compression type is missing from message description")
+	errSyncServiceReadFailed         = errors.New("sync service error")
 )
 
 // NewSyncService creates a new instance of SyncService.
-func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.Bundle) (*SyncService, error) {
+func NewSyncService(log logr.Logger) (*SyncService, error) {
 	serverProtocol, host, port, pollingInterval, err := readEnvVars()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize sync service - %w", err)
@@ -48,16 +48,16 @@ func NewSyncService(log logr.Logger, bundleUpdatesChan chan *bundle.Bundle) (*Sy
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	return &SyncService{
-		log:                 log,
-		client:              syncServiceClient,
-		compressorsMap:      make(map[compressor.CompressionType]compressors.Compressor),
-		pollingInterval:     pollingInterval,
-		bundlesMetaDataChan: make(chan *client.ObjectMetaData),
-		bundlesUpdatesChan:  bundleUpdatesChan,
-		commitMap:           make(map[string]*client.ObjectMetaData),
-		ctx:                 ctx,
-		cancelFunc:          cancelFunc,
-		lock:                sync.Mutex{},
+		log:                      log,
+		client:                   syncServiceClient,
+		compressorsMap:           make(map[compressor.CompressionType]compressors.Compressor),
+		pollingInterval:          pollingInterval,
+		bundlesMetaDataChan:      make(chan *client.ObjectMetaData),
+		bundleIDToUpdatesChanMap: make(map[string]chan interface{}),
+		commitMap:                make(map[string]*client.ObjectMetaData),
+		ctx:                      ctx,
+		cancelFunc:               cancelFunc,
+		lock:                     sync.Mutex{},
 	}, nil
 }
 
@@ -99,13 +99,14 @@ func readEnvVars() (string, string, uint16, int, error) {
 
 // SyncService abstracts Sync Service client.
 type SyncService struct {
-	log                 logr.Logger
-	client              *client.SyncServiceClient
-	compressorsMap      map[compressor.CompressionType]compressors.Compressor
-	pollingInterval     int
-	bundlesMetaDataChan chan *client.ObjectMetaData
-	bundlesUpdatesChan  chan *bundle.Bundle
-	commitMap           map[string]*client.ObjectMetaData // map from object key to metadata. size limited at all times.
+	log                      logr.Logger
+	client                   *client.SyncServiceClient
+	compressorsMap           map[compressor.CompressionType]compressors.Compressor
+	pollingInterval          int
+	bundlesMetaDataChan      chan *client.ObjectMetaData
+	bundleIDToUpdatesChanMap map[string]chan interface{}
+	// map from object key to metadata. size limited at all times.
+	commitMap map[string]*client.ObjectMetaData
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -129,6 +130,11 @@ func (s *SyncService) Stop() {
 	})
 }
 
+// Register function registers a bundles channel to a msgID.
+func (s *SyncService) Register(msgID string, bundleUpdatesChan chan interface{}) {
+	s.bundleIDToUpdatesChanMap[msgID] = bundleUpdatesChan
+}
+
 func (s *SyncService) handleBundles(ctx context.Context) {
 	// register for updates for spec bundles and config objects, includes all types of spec bundles.
 	s.client.StartPollingForUpdates(datatypes.SpecBundle, s.pollingInterval, s.bundlesMetaDataChan)
@@ -143,20 +149,8 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 				s.logError(errSyncServiceReadFailed, "failed to read bundle from sync service", objectMetaData)
 				continue
 			}
-
-			compressionType := defaultCompressionType
-
-			if objectMetaData.Description != "" { // obj desc is Content-Encoding:type
-				compressionTokens := strings.Split(objectMetaData.Description, ":")
-				if len(compressionTokens) != compressionHeaderTokensLength {
-					s.logError(errMissingCompressionType, "invalid compression header (Description)",
-						objectMetaData)
-
-					continue
-				}
-
-				compressionType = compressor.CompressionType(compressionTokens[1])
-			}
+			// sync-service does not need to check for leafHubName since we assume actual selective-distribution.
+			compressionType := s.getObjectCompressionType(objectMetaData)
 
 			decompressedPayload, err := s.decompressPayload(buf.Bytes(), compressionType)
 			if err != nil {
@@ -164,13 +158,18 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 				continue
 			}
 
-			receivedBundle := bundle.NewBundle()
-			if err := json.Unmarshal(decompressedPayload, receivedBundle); err != nil {
-				s.logError(err, "failed to parse bundle", objectMetaData)
+			bundlesUpdatesChan, found := s.bundleIDToUpdatesChanMap[objectMetaData.ObjectID]
+			if !found {
+				s.logError(errReceivedUnsupportedBundleType, "dropped bundle", objectMetaData)
 				continue
 			}
 
-			s.bundlesUpdatesChan <- receivedBundle
+			var receivedBundle interface{}
+			if err := json.Unmarshal(decompressedPayload, receivedBundle); err != nil {
+				s.logError(err, "failed to parse bundle", objectMetaData)
+			}
+
+			bundlesUpdatesChan <- receivedBundle
 
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
 				s.logError(err, "failed to report object received to sync service", objectMetaData)
@@ -182,6 +181,22 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 func (s *SyncService) logError(err error, errMsg string, objectMetaData *client.ObjectMetaData) {
 	s.log.Error(err, errMsg, "ObjectID", objectMetaData.ObjectID, "ObjectType", objectMetaData.ObjectType,
 		"ObjectDescription", objectMetaData.Description, "Version", objectMetaData.Version)
+}
+
+func (s *SyncService) getObjectCompressionType(objectMetaData *client.ObjectMetaData) compressor.CompressionType {
+	if objectMetaData.Description != "" { // obj desc is Content-Encoding:type
+		compressionTokens := strings.Split(objectMetaData.Description, ":")
+		if len(compressionTokens) != compressionHeaderTokensLength {
+			s.logError(errMissingCompressionType, "invalid compression header (Description)",
+				objectMetaData)
+
+			return defaultCompressionType
+		}
+
+		return compressor.CompressionType(compressionTokens[1])
+	}
+
+	return defaultCompressionType
 }
 
 func (s *SyncService) decompressPayload(payload []byte, compressionType compressor.CompressionType) ([]byte, error) {

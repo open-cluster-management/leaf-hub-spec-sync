@@ -6,4 +6,6 @@ type Transport interface {
 	Start()
 	// Stop stops the transport.
 	Stop()
+	// Register function registers a bundles channel to a msgID.
+	Register(msgID string, bundleUpdatesChan chan interface{})
 }

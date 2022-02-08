@@ -11,7 +11,6 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 	"github.com/spf13/pflag"
-	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport/kafka"
@@ -41,17 +40,17 @@ func printVersion(log logr.Logger) {
 }
 
 // function to choose transport type based on env var.
-func getTransport(transportType string, bundleUpdatesChan chan *bundle.Bundle) (transport.Transport, error) {
+func getTransport(transportType string) (transport.Transport, error) {
 	switch transportType {
 	case kafkaTransportTypeName:
-		kafkaConsumer, err := kafka.NewConsumer(ctrl.Log.WithName("kafka"), bundleUpdatesChan)
+		kafkaConsumer, err := kafka.NewConsumer(ctrl.Log.WithName("kafka"))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create kafka-consumer: %w", err)
 		}
 
 		return kafkaConsumer, nil
 	case syncServiceTransportTypeName:
-		syncService, err := syncservice.NewSyncService(ctrl.Log.WithName("sync-service"), bundleUpdatesChan)
+		syncService, err := syncservice.NewSyncService(ctrl.Log.WithName("sync-service"))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create sync-service: %w", err)
 		}
@@ -86,17 +85,13 @@ func doMain() int {
 		return 1
 	}
 
-	// transport layer initialization
-	bundleUpdatesChan := make(chan *bundle.Bundle)
-	defer close(bundleUpdatesChan)
-
-	transportObj, err := getTransport(transportType, bundleUpdatesChan)
+	transportObj, err := getTransport(transportType)
 	if err != nil {
 		log.Error(err, "transport initialization error")
 		return 1
 	}
 
-	mgr, err := createManager(leaderElectionNamespace, bundleUpdatesChan)
+	mgr, err := createManager(leaderElectionNamespace, transportObj)
 	if err != nil {
 		log.Error(err, "Failed to create manager")
 		return 1
@@ -115,7 +110,7 @@ func doMain() int {
 	return 0
 }
 
-func createManager(leaderElectionNamespace string, bundleUpdatesChan chan *bundle.Bundle) (ctrl.Manager, error) {
+func createManager(leaderElectionNamespace string, transportObj transport.Transport) (ctrl.Manager, error) {
 	options := ctrl.Options{
 		MetricsBindAddress:      fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 		LeaderElection:          true,
@@ -128,7 +123,7 @@ func createManager(leaderElectionNamespace string, bundleUpdatesChan chan *bundl
 		return nil, fmt.Errorf("failed to create a new manager: %w", err)
 	}
 
-	if err := controller.AddSpecSyncer(mgr, bundleUpdatesChan); err != nil {
+	if err := controller.AddSpecSyncer(mgr, transportObj); err != nil {
 		return nil, fmt.Errorf("failed to add spec syncer: %w", err)
 	}
 
