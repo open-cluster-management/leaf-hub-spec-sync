@@ -1,13 +1,13 @@
-module github.com/open-cluster-management/leaf-hub-spec-sync
+module github.com/stolostron/leaf-hub-spec-sync
 
 go 1.17
 
 require (
 	github.com/confluentinc/confluent-kafka-go v1.7.0
 	github.com/go-logr/logr v0.4.0
-	github.com/open-cluster-management/hub-of-hubs-data-types v0.3.0
-	github.com/open-cluster-management/hub-of-hubs-kafka-transport v0.3.0
-	github.com/open-cluster-management/hub-of-hubs-message-compression v0.3.0
+	github.com/stolostron/hub-of-hubs-data-types v0.3.1
+	github.com/stolostron/hub-of-hubs-kafka-transport v0.3.1
+	github.com/stolostron/hub-of-hubs-message-compression v0.3.1
 	github.com/open-horizon/edge-sync-service-client v0.0.0-20190711093406-dc3a19905da2
 	github.com/operator-framework/operator-sdk v0.19.4
 	github.com/spf13/pflag v1.0.5

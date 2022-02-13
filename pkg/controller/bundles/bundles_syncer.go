@@ -6,21 +6,19 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller/helpers"
-	k8sworkerpool "github.com/open-cluster-management/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/helpers"
+	k8sworkerpool "github.com/stolostron/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // AddBundleSpecSync adds BundleSpecSync to the manager.
-func AddBundleSpecSync(log logr.Logger, mgr ctrl.Manager, transport transport.Transport,
-	bundleUpdatesChan chan *bundle.Bundle, k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
+func AddBundleSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan *bundle.Bundle,
+	k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
 	if err := mgr.Add(&BundleSpecSync{
 		log:                          log,
-		transport:                    transport,
 		bundleUpdatesChan:            bundleUpdatesChan,
 		k8sWorkerPool:                k8sWorkerPool,
 		bundleProcessingWaitingGroup: sync.WaitGroup{},
@@ -34,7 +32,6 @@ func AddBundleSpecSync(log logr.Logger, mgr ctrl.Manager, transport transport.Tr
 // BundleSpecSync syncs objects spec from received bundles.
 type BundleSpecSync struct {
 	log                          logr.Logger
-	transport                    transport.Transport
 	bundleUpdatesChan            chan *bundle.Bundle
 	k8sWorkerPool                *k8sworkerpool.K8sWorkerPool
 	bundleProcessingWaitingGroup sync.WaitGroup

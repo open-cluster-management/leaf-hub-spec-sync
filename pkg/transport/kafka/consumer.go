@@ -10,14 +10,14 @@ import (
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/go-logr/logr"
-	datatypes "github.com/open-cluster-management/hub-of-hubs-data-types"
-	"github.com/open-cluster-management/hub-of-hubs-kafka-transport/headers"
-	kafkaclient "github.com/open-cluster-management/hub-of-hubs-kafka-transport/kafka-client"
-	kafkaconsumer "github.com/open-cluster-management/hub-of-hubs-kafka-transport/kafka-client/kafka-consumer"
-	compressor "github.com/open-cluster-management/hub-of-hubs-message-compression"
-	"github.com/open-cluster-management/hub-of-hubs-message-compression/compressors"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/bundle"
-	"github.com/open-cluster-management/leaf-hub-spec-sync/pkg/transport"
+	datatypes "github.com/stolostron/hub-of-hubs-data-types"
+	"github.com/stolostron/hub-of-hubs-kafka-transport/headers"
+	kafkaclient "github.com/stolostron/hub-of-hubs-kafka-transport/kafka-client"
+	kafkaconsumer "github.com/stolostron/hub-of-hubs-kafka-transport/kafka-client/kafka-consumer"
+	compressor "github.com/stolostron/hub-of-hubs-message-compression"
+	"github.com/stolostron/hub-of-hubs-message-compression/compressors"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
 )
 
 const (
