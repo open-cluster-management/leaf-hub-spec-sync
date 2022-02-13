@@ -157,7 +157,7 @@ func (syncer *ManagedClustersMetadataBundleSyncer) updateManagedClusterAsync(met
 
 		// enforce received labels state (overwrite if exists)
 		for _, labelPair := range metadata.Labels {
-			keyValue := strings.Split(labelPair, ":")
+			keyValue := strings.Split(labelPair, ":") // label format key:value
 			if len(keyValue) != labelTokensSize {
 				syncer.log.Error(errInvalidLabelFormat, "skipped label enforcement", "label", labelPair)
 				continue
