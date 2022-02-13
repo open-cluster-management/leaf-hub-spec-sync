@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
 	clusterv1 "github.com/open-cluster-management/api/cluster/v1"
-	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	"github.com/stolostron/hub-of-hubs-data-types/bundle/spec"
 	k8sworkerpool "github.com/stolostron/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
@@ -30,7 +30,6 @@ var errInvalidLabelFormat = errors.New("invalid label format, format should be k
 func AddManagedClustersMetadataBundleSyncer(log logr.Logger, mgr ctrl.Manager, transport transport.Transport,
 	k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
 	bundleUpdatesChan := make(chan interface{})
-	transport.Register(datatypes.ManagedClustersMetadataMsgKey, bundleUpdatesChan)
 
 	if err := mgr.Add(&ManagedClustersMetadataBundleSyncer{
 		log:                          log,
@@ -45,6 +44,8 @@ func AddManagedClustersMetadataBundleSyncer(log logr.Logger, mgr ctrl.Manager, t
 		close(bundleUpdatesChan)
 		return fmt.Errorf("failed to add unstructured bundles spec syncer - %w", err)
 	}
+
+	transport.Register(datatypes.ManagedClustersMetadataMsgKey, bundleUpdatesChan)
 
 	return nil
 }

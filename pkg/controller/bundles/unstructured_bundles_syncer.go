@@ -3,10 +3,10 @@ package bundles
 import (
 	"context"
 	"fmt"
+	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	"sync"
 
 	"github.com/go-logr/logr"
-	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/helpers"
 	k8sworkerpool "github.com/stolostron/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
@@ -21,6 +21,16 @@ func AddUnstructuredBundleSyncer(log logr.Logger, mgr ctrl.Manager, transport tr
 	k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
 	bundleUpdatesChan := make(chan interface{})
 
+	if err := mgr.Add(&UnstructuredBundleSyncer{
+		log:                          log,
+		bundleUpdatesChan:            bundleUpdatesChan,
+		k8sWorkerPool:                k8sWorkerPool,
+		bundleProcessingWaitingGroup: sync.WaitGroup{},
+	}); err != nil {
+		close(bundleUpdatesChan)
+		return fmt.Errorf("failed to add unstructured bundles spec syncer - %w", err)
+	}
+
 	unstructuredSpecBundlesKeys := []string{
 		datatypes.Config,
 		datatypes.PoliciesMsgKey,
@@ -30,16 +40,6 @@ func AddUnstructuredBundleSyncer(log logr.Logger, mgr ctrl.Manager, transport tr
 
 	for _, unstructuredSpecBundleKey := range unstructuredSpecBundlesKeys {
 		transport.Register(unstructuredSpecBundleKey, bundleUpdatesChan)
-	}
-
-	if err := mgr.Add(&UnstructuredBundleSyncer{
-		log:                          log,
-		bundleUpdatesChan:            bundleUpdatesChan,
-		k8sWorkerPool:                k8sWorkerPool,
-		bundleProcessingWaitingGroup: sync.WaitGroup{},
-	}); err != nil {
-		close(bundleUpdatesChan)
-		return fmt.Errorf("failed to add unstructured bundles spec syncer - %w", err)
 	}
 
 	return nil
