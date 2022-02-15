@@ -35,7 +35,7 @@ func AddManagedClustersMetadataBundleSyncer(log logr.Logger, mgr ctrl.Manager, t
 		log:                          log,
 		bundleUpdatesChan:            bundleUpdatesChan,
 		lastReceivedBundle:           nil,
-		highestProcessedVersion:      0,
+		latestProcessedTimestamp:     &time.Time{},
 		k8sWorkerPool:                k8sWorkerPool,
 		bundleProcessingWaitingGroup: sync.WaitGroup{},
 		receivedBundleLock:           sync.Mutex{},
@@ -55,8 +55,8 @@ type ManagedClustersMetadataBundleSyncer struct {
 	log               logr.Logger
 	bundleUpdatesChan chan interface{}
 
-	lastReceivedBundle      *spec.ManagedClustersMetadata
-	highestProcessedVersion uint64
+	lastReceivedBundle       *spec.ManagedClustersMetadata
+	latestProcessedTimestamp *time.Time
 
 	k8sWorkerPool                *k8sworkerpool.K8sWorkerPool
 	bundleProcessingWaitingGroup sync.WaitGroup
@@ -103,7 +103,7 @@ func (syncer *ManagedClustersMetadataBundleSyncer) bundleHandler(ctx context.Con
 			return
 
 		case <-ticker.C:
-			if syncer.lastReceivedBundle == nil || syncer.lastReceivedBundle.Version == syncer.highestProcessedVersion {
+			if syncer.lastReceivedBundle == nil {
 				continue
 			}
 
@@ -123,10 +123,8 @@ func (syncer *ManagedClustersMetadataBundleSyncer) handleBundle() {
 	syncer.receivedBundleLock.Lock()
 	defer syncer.receivedBundleLock.Unlock()
 
-	receivedBundle := syncer.lastReceivedBundle
-
-	for _, managedClusterMetadata := range receivedBundle.Objects {
-		if managedClusterMetadata.Version > syncer.highestProcessedVersion { // handle (successfully) only once
+	for _, managedClusterMetadata := range syncer.lastReceivedBundle.Objects {
+		if managedClusterMetadata.UpdateTimestamp.After(*syncer.latestProcessedTimestamp) { // handle (success) once
 			syncer.bundleProcessingWaitingGroup.Add(1)
 			syncer.updateManagedClusterAsync(managedClusterMetadata)
 		}
@@ -145,7 +143,7 @@ func (syncer *ManagedClustersMetadataBundleSyncer) updateManagedClusterAsync(met
 			Name:      metadata.Name,
 			Namespace: metadata.Namespace,
 		}, managedCluster); k8serrors.IsNotFound(err) {
-			syncer.managedClusterMarkUpdated(metadata.Version) // if not found then irrelevant
+			syncer.managedClusterMarkUpdated(&metadata.UpdateTimestamp) // if not found then irrelevant
 			return
 		} else if err != nil {
 			syncer.log.Error(err, "failed to get managed cluster", "name", metadata.Name,
@@ -177,16 +175,16 @@ func (syncer *ManagedClustersMetadataBundleSyncer) updateManagedClusterAsync(met
 				"namespace", metadata.Namespace)
 		}
 
-		syncer.managedClusterMarkUpdated(metadata.Version)
+		syncer.managedClusterMarkUpdated(&metadata.UpdateTimestamp)
 	}))
 }
 
-func (syncer *ManagedClustersMetadataBundleSyncer) managedClusterMarkUpdated(version uint64) {
+func (syncer *ManagedClustersMetadataBundleSyncer) managedClusterMarkUpdated(version *time.Time) {
 	syncer.versionLock.Lock()
 	defer syncer.versionLock.Unlock()
 
-	if version > syncer.highestProcessedVersion {
-		syncer.highestProcessedVersion = version
+	if version.After(*syncer.latestProcessedTimestamp) {
+		syncer.latestProcessedTimestamp = version
 	}
 
 	syncer.bundleProcessingWaitingGroup.Done()
