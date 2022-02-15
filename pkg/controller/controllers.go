@@ -22,7 +22,7 @@ func AddSpecSyncer(mgr ctrl.Manager, transportObj transport.Transport) error {
 		loggerName            string
 	}{
 		{bundles.AddUnstructuredBundleSyncer, "unstructured-bundle-syncer"},
-		{bundles.AddManagedClustersMetadataBundleSyncer, "managed-clusters-metadata-syncer"},
+		{bundles.AddManagedClusterLabelsBundleSyncer, "managed-clusters-metadata-syncer"},
 	}
 
 	for _, controllerInitInfo := range addControllerFunctions {

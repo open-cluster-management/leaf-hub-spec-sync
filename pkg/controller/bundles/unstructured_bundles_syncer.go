@@ -3,10 +3,10 @@ package bundles
 import (
 	"context"
 	"fmt"
-	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	"sync"
 
 	"github.com/go-logr/logr"
+	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/helpers"
 	k8sworkerpool "github.com/stolostron/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
