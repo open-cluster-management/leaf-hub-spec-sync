@@ -123,6 +123,10 @@ func createManager(leaderElectionNamespace string, transportObj transport.Transp
 		return nil, fmt.Errorf("failed to create a new manager: %w", err)
 	}
 
+	if err := controller.AddToScheme(mgr.GetScheme()); err != nil {
+		return nil, fmt.Errorf("failed to add schemes: %w", err)
+	}
+
 	if err := controller.AddSpecSyncer(mgr, transportObj); err != nil {
 		return nil, fmt.Errorf("failed to add spec syncer: %w", err)
 	}
