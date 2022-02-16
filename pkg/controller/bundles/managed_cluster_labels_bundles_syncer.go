@@ -20,7 +20,7 @@ import (
 const periodicApplyInterval = 5 * time.Second
 
 // AddManagedClusterLabelsBundleSyncer adds UnstructuredBundleSyncer to the manager.
-func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, transport transport.Transport,
+func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, transportObj transport.Transport,
 	k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
 	bundleUpdatesChan := make(chan interface{})
 
@@ -38,7 +38,12 @@ func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, tran
 		return fmt.Errorf("failed to add unstructured bundles spec syncer - %w", err)
 	}
 
-	transport.Register(datatypes.ManagedClustersMetadataMsgKey, bundleUpdatesChan)
+	transportObj.Register(datatypes.ManagedClustersMetadataMsgKey, &transport.BundleRegistration{
+		CreateBundleFunc: func() interface{} {
+			return &spec.ManagedClusterLabelsSpecBundle{}
+		},
+		BundleUpdatesChan: bundleUpdatesChan,
+	})
 
 	return nil
 }
@@ -136,7 +141,10 @@ func (syncer *ManagedClusterLabelsBundleSyncer) updateManagedClusterAsync(labels
 			Name:      labelsSpec.Name,
 			Namespace: labelsSpec.Namespace,
 		}, managedCluster); k8serrors.IsNotFound(err) {
+			syncer.log.Info("managed cluster ignored - not found", "name", labelsSpec.Name,
+				"namespace", labelsSpec.Namespace)
 			syncer.managedClusterMarkUpdated(&labelsSpec.UpdateTimestamp) // if not found then irrelevant
+
 			return
 		} else if err != nil {
 			syncer.log.Error(err, "failed to get managed cluster", "name", labelsSpec.Name,
@@ -161,6 +169,9 @@ func (syncer *ManagedClusterLabelsBundleSyncer) updateManagedClusterAsync(labels
 			syncer.log.Error(err, "failed to update managed cluster", "name", labelsSpec.Name,
 				"namespace", labelsSpec.Namespace)
 		}
+
+		syncer.log.Info("managed cluster updated", "name", labelsSpec.Name,
+			"namespace", labelsSpec.Namespace)
 
 		syncer.managedClusterMarkUpdated(&labelsSpec.UpdateTimestamp)
 	}))

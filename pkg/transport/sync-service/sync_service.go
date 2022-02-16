@@ -16,6 +16,7 @@ import (
 	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	compressor "github.com/stolostron/hub-of-hubs-message-compression"
 	"github.com/stolostron/hub-of-hubs-message-compression/compressors"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
 )
 
 const (
@@ -48,16 +49,16 @@ func NewSyncService(log logr.Logger) (*SyncService, error) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	return &SyncService{
-		log:                      log,
-		client:                   syncServiceClient,
-		compressorsMap:           make(map[compressor.CompressionType]compressors.Compressor),
-		pollingInterval:          pollingInterval,
-		bundlesMetaDataChan:      make(chan *client.ObjectMetaData),
-		bundleIDToUpdatesChanMap: make(map[string]chan interface{}),
-		commitMap:                make(map[string]*client.ObjectMetaData),
-		ctx:                      ctx,
-		cancelFunc:               cancelFunc,
-		lock:                     sync.Mutex{},
+		log:                       log,
+		client:                    syncServiceClient,
+		compressorsMap:            make(map[compressor.CompressionType]compressors.Compressor),
+		pollingInterval:           pollingInterval,
+		bundlesMetaDataChan:       make(chan *client.ObjectMetaData),
+		bundleIDToRegistrationMap: make(map[string]*transport.BundleRegistration),
+		commitMap:                 make(map[string]*client.ObjectMetaData),
+		ctx:                       ctx,
+		cancelFunc:                cancelFunc,
+		lock:                      sync.Mutex{},
 	}, nil
 }
 
@@ -99,12 +100,12 @@ func readEnvVars() (string, string, uint16, int, error) {
 
 // SyncService abstracts Sync Service client.
 type SyncService struct {
-	log                      logr.Logger
-	client                   *client.SyncServiceClient
-	compressorsMap           map[compressor.CompressionType]compressors.Compressor
-	pollingInterval          int
-	bundlesMetaDataChan      chan *client.ObjectMetaData
-	bundleIDToUpdatesChanMap map[string]chan interface{}
+	log                       logr.Logger
+	client                    *client.SyncServiceClient
+	compressorsMap            map[compressor.CompressionType]compressors.Compressor
+	pollingInterval           int
+	bundlesMetaDataChan       chan *client.ObjectMetaData
+	bundleIDToRegistrationMap map[string]*transport.BundleRegistration
 	// map from object key to metadata. size limited at all times.
 	commitMap map[string]*client.ObjectMetaData
 
@@ -131,8 +132,8 @@ func (s *SyncService) Stop() {
 }
 
 // Register function registers a bundles channel to a msgID.
-func (s *SyncService) Register(msgID string, bundleUpdatesChan chan interface{}) {
-	s.bundleIDToUpdatesChanMap[msgID] = bundleUpdatesChan
+func (s *SyncService) Register(msgID string, bundleRegistration *transport.BundleRegistration) {
+	s.bundleIDToRegistrationMap[msgID] = bundleRegistration
 }
 
 func (s *SyncService) handleBundles(ctx context.Context) {
@@ -158,18 +159,18 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 				continue
 			}
 
-			bundlesUpdatesChan, found := s.bundleIDToUpdatesChanMap[objectMetaData.ObjectID]
+			bundleRegistration, found := s.bundleIDToRegistrationMap[objectMetaData.ObjectID]
 			if !found {
 				s.logError(errReceivedUnsupportedBundleType, "dropped bundle", objectMetaData)
 				continue
 			}
 
-			var receivedBundle interface{}
-			if err := json.Unmarshal(decompressedPayload, receivedBundle); err != nil {
+			receivedBundle := bundleRegistration.CreateBundleFunc()
+			if err := json.Unmarshal(decompressedPayload, &receivedBundle); err != nil {
 				s.logError(err, "failed to parse bundle", objectMetaData)
 			}
 
-			bundlesUpdatesChan <- receivedBundle
+			bundleRegistration.BundleUpdatesChan <- receivedBundle
 
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
 				s.logError(err, "failed to report object received to sync service", objectMetaData)

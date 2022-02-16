@@ -62,7 +62,7 @@ func NewConsumer(log logr.Logger) (*Consumer, error) {
 		compressorsMap:               make(map[compressor.CompressionType]compressors.Compressor),
 		topic:                        topic,
 		msgChan:                      msgChan,
-		bundleIDToUpdatesChanMap:     make(map[string]chan interface{}),
+		bundleIDToRegistrationMap:    make(map[string]*transport.BundleRegistration),
 		partitionToOffsetToCommitMap: make(map[int32]kafka.Offset),
 		ctx:                          ctx,
 		cancelFunc:                   cancelFunc,
@@ -122,8 +122,8 @@ type Consumer struct {
 	compressorsMap map[compressor.CompressionType]compressors.Compressor
 	topic          string
 
-	msgChan                  chan *kafka.Message
-	bundleIDToUpdatesChanMap map[string]chan interface{}
+	msgChan                   chan *kafka.Message
+	bundleIDToRegistrationMap map[string]*transport.BundleRegistration
 
 	partitionToOffsetToCommitMap map[int32]kafka.Offset // size limited at all times (low)
 
@@ -150,9 +150,9 @@ func (c *Consumer) Stop() {
 	})
 }
 
-// Register function registers a bundles channel to a msgID.
-func (c *Consumer) Register(msgID string, bundleUpdatesChan chan interface{}) {
-	c.bundleIDToUpdatesChanMap[msgID] = bundleUpdatesChan
+// Register function registers a bundle ID to a BundleRegistration.
+func (c *Consumer) Register(msgID string, bundleRegistration *transport.BundleRegistration) {
+	c.bundleIDToRegistrationMap[msgID] = bundleRegistration
 }
 
 func (c *Consumer) handleKafkaMessages(ctx context.Context) {
@@ -192,7 +192,7 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 		return
 	}
 
-	bundlesUpdatesChan, found := c.bundleIDToUpdatesChanMap[transportMsg.MsgType]
+	bundlesRegistration, found := c.bundleIDToRegistrationMap[transportMsg.ID]
 	if !found {
 		c.log.Error(errReceivedUnsupportedBundleType, "skipped received message", "MessageID", transportMsg.ID,
 			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
@@ -200,15 +200,15 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 		return
 	}
 
-	var receivedBundle interface{}
-	if err := json.Unmarshal(transportMsg.Payload, receivedBundle); err != nil {
+	receivedBundle := bundlesRegistration.CreateBundleFunc()
+	if err := json.Unmarshal(transportMsg.Payload, &receivedBundle); err != nil {
 		c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
 			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
 
 		return
 	}
 
-	bundlesUpdatesChan <- receivedBundle
+	bundlesRegistration.BundleUpdatesChan <- receivedBundle
 }
 
 func (c *Consumer) logError(err error, errMessage string, msg *kafka.Message) {

@@ -17,7 +17,7 @@ import (
 )
 
 // AddUnstructuredBundleSyncer adds UnstructuredBundleSyncer to the manager.
-func AddUnstructuredBundleSyncer(log logr.Logger, mgr ctrl.Manager, transport transport.Transport,
+func AddUnstructuredBundleSyncer(log logr.Logger, mgr ctrl.Manager, transportObj transport.Transport,
 	k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
 	bundleUpdatesChan := make(chan interface{})
 
@@ -39,7 +39,12 @@ func AddUnstructuredBundleSyncer(log logr.Logger, mgr ctrl.Manager, transport tr
 	}
 
 	for _, unstructuredSpecBundleKey := range unstructuredSpecBundlesKeys {
-		transport.Register(unstructuredSpecBundleKey, bundleUpdatesChan)
+		transportObj.Register(unstructuredSpecBundleKey, &transport.BundleRegistration{
+			CreateBundleFunc: func() interface{} {
+				return &bundle.UnstructuredBundle{}
+			},
+			BundleUpdatesChan: bundleUpdatesChan,
+		})
 	}
 
 	return nil
