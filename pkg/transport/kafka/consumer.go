@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -25,7 +24,6 @@ const (
 	envVarKafkaSSLCA            = "KAFKA_SSL_CA"
 	envVarKafkaTopic            = "KAFKA_TOPIC"
 	defaultCompressionType      = compressor.NoOp
-	messageKeyTokensSize        = 2
 )
 
 var (
@@ -172,10 +170,11 @@ func (c *Consumer) handleKafkaMessages(ctx context.Context) {
 func (c *Consumer) processMessage(msg *kafka.Message) {
 	compressionType := defaultCompressionType
 
-	tokens := strings.Split(string(msg.Key), ".")
-	if len(tokens) != messageKeyTokensSize || tokens[0] != c.leafHubName {
-		return // bundle not tagged with this hub
-	}
+	if msgDestinationLeafHubBytes, found := c.lookupHeaderValue(msg, headers.DestinationHub); found {
+		if string(msgDestinationLeafHubBytes) != c.leafHubName {
+			return // if destination is explicitly specified and does not match, drop bundle
+		}
+	} // if header is not found then assume broadcast
 
 	if compressionTypeBytes, found := c.lookupHeaderValue(msg, headers.CompressionType); found {
 		compressionType = compressor.CompressionType(compressionTypeBytes)
