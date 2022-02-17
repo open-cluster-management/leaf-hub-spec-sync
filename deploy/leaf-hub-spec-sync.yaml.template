@@ -56,6 +56,12 @@ rules:
   - create
   - update
   - delete
+- apiGroups:
+  - ""
+  resources:
+  - users
+  verbs:
+  - impersonate
 ---
 
 kind: ClusterRoleBinding
