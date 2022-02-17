@@ -177,12 +177,12 @@ func (syncer *ManagedClusterLabelsBundleSyncer) updateManagedClusterAsync(labels
 	}))
 }
 
-func (syncer *ManagedClusterLabelsBundleSyncer) managedClusterMarkUpdated(version *time.Time) {
+func (syncer *ManagedClusterLabelsBundleSyncer) managedClusterMarkUpdated(timestamp *time.Time) {
 	syncer.versionLock.Lock()
 	defer syncer.versionLock.Unlock()
 
-	if version.After(*syncer.latestProcessedTimestamp) {
-		syncer.latestProcessedTimestamp = version
+	if timestamp.After(*syncer.latestProcessedTimestamp) {
+		syncer.latestProcessedTimestamp = timestamp
 	}
 
 	syncer.bundleProcessingWaitingGroup.Done()
