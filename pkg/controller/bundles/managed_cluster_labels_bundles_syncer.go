@@ -17,7 +17,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const periodicApplyInterval = 5 * time.Second
+const (
+	periodicApplyInterval = 5 * time.Second
+	defaultNamespace      = "default"
+)
 
 // AddManagedClusterLabelsBundleSyncer adds UnstructuredBundleSyncer to the manager.
 func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, transportObj transport.Transport,
@@ -28,11 +31,10 @@ func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, tran
 		log:                          log,
 		bundleUpdatesChan:            bundleUpdatesChan,
 		latestBundle:                 nil,
-		latestProcessedTimestamp:     &time.Time{},
+		managedClusterToTimestampMap: make(map[string]*time.Time),
 		k8sWorkerPool:                k8sWorkerPool,
 		bundleProcessingWaitingGroup: sync.WaitGroup{},
 		latestBundleLock:             sync.Mutex{},
-		versionLock:                  sync.Mutex{},
 	}); err != nil {
 		close(bundleUpdatesChan)
 		return fmt.Errorf("failed to add unstructured bundles spec syncer - %w", err)
@@ -53,13 +55,12 @@ type ManagedClusterLabelsBundleSyncer struct {
 	log               logr.Logger
 	bundleUpdatesChan chan interface{}
 
-	latestBundle             *spec.ManagedClusterLabelsSpecBundle
-	latestProcessedTimestamp *time.Time
+	latestBundle                 *spec.ManagedClusterLabelsSpecBundle
+	managedClusterToTimestampMap map[string]*time.Time
 
 	k8sWorkerPool                *k8sworkerpool.K8sWorkerPool
 	bundleProcessingWaitingGroup sync.WaitGroup
 	latestBundleLock             sync.Mutex
-	versionLock                  sync.Mutex
 }
 
 // Start function starts bundles spec syncer.
@@ -122,9 +123,10 @@ func (syncer *ManagedClusterLabelsBundleSyncer) handleBundle() {
 	defer syncer.latestBundleLock.Unlock()
 
 	for _, managedClusterMetadata := range syncer.latestBundle.Objects {
-		if managedClusterMetadata.UpdateTimestamp.After(*syncer.latestProcessedTimestamp) { // handle (success) once
+		lastProcessedTimestamp := syncer.getManagedClusterLastProcessedTimestamp(managedClusterMetadata.Name)
+		if managedClusterMetadata.UpdateTimestamp.After(*lastProcessedTimestamp) { // handle (success) once
 			syncer.bundleProcessingWaitingGroup.Add(1)
-			syncer.updateManagedClusterAsync(managedClusterMetadata)
+			syncer.updateManagedClusterAsync(managedClusterMetadata, lastProcessedTimestamp)
 		}
 	}
 
@@ -132,23 +134,22 @@ func (syncer *ManagedClusterLabelsBundleSyncer) handleBundle() {
 	syncer.bundleProcessingWaitingGroup.Wait()
 }
 
-func (syncer *ManagedClusterLabelsBundleSyncer) updateManagedClusterAsync(labelsSpec *spec.ManagedClusterLabelsSpec) {
+func (syncer *ManagedClusterLabelsBundleSyncer) updateManagedClusterAsync(labelsSpec *spec.ManagedClusterLabelsSpec,
+	lastProcessedTimestampInMap *time.Time) {
 	syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(labelsSpec, func(ctx context.Context,
 		k8sClient client.Client, obj interface{},
 	) {
 		managedCluster := &clusterv1.ManagedCluster{}
 		if err := k8sClient.Get(ctx, client.ObjectKey{
 			Name:      labelsSpec.Name,
-			Namespace: labelsSpec.Namespace,
+			Namespace: defaultNamespace,
 		}, managedCluster); k8serrors.IsNotFound(err) {
-			syncer.log.Info("managed cluster ignored - not found", "name", labelsSpec.Name,
-				"namespace", labelsSpec.Namespace)
-			syncer.managedClusterMarkUpdated(&labelsSpec.UpdateTimestamp) // if not found then irrelevant
+			syncer.log.Info("managed cluster ignored - not found", "name", labelsSpec.Name)
+			syncer.managedClusterMarkUpdated(labelsSpec, lastProcessedTimestampInMap) // if not found then irrelevant
 
 			return
 		} else if err != nil {
-			syncer.log.Error(err, "failed to get managed cluster", "name", labelsSpec.Name,
-				"namespace", labelsSpec.Namespace)
+			syncer.log.Error(err, "failed to get managed cluster", "name", labelsSpec.Name)
 			syncer.bundleProcessingWaitingGroup.Done()
 
 			return
@@ -166,24 +167,29 @@ func (syncer *ManagedClusterLabelsBundleSyncer) updateManagedClusterAsync(labels
 
 		// update CR with replace API: fails if CR was modified since client.get
 		if err := k8sClient.Update(ctx, managedCluster, &client.UpdateOptions{}); err != nil {
-			syncer.log.Error(err, "failed to update managed cluster", "name", labelsSpec.Name,
-				"namespace", labelsSpec.Namespace)
+			syncer.log.Error(err, "failed to update managed cluster", "name", labelsSpec.Name)
 		}
 
-		syncer.log.Info("managed cluster updated", "name", labelsSpec.Name,
-			"namespace", labelsSpec.Namespace)
-
-		syncer.managedClusterMarkUpdated(&labelsSpec.UpdateTimestamp)
+		syncer.log.Info("managed cluster updated", "name", labelsSpec.Name)
+		syncer.managedClusterMarkUpdated(labelsSpec, lastProcessedTimestampInMap)
 	}))
 }
 
-func (syncer *ManagedClusterLabelsBundleSyncer) managedClusterMarkUpdated(timestamp *time.Time) {
-	syncer.versionLock.Lock()
-	defer syncer.versionLock.Unlock()
-
-	if timestamp.After(*syncer.latestProcessedTimestamp) {
-		syncer.latestProcessedTimestamp = timestamp
-	}
+func (syncer *ManagedClusterLabelsBundleSyncer) managedClusterMarkUpdated(labelsSpec *spec.ManagedClusterLabelsSpec,
+	lastProcessedTimestampInMap *time.Time) {
+	*lastProcessedTimestampInMap = labelsSpec.UpdateTimestamp
 
 	syncer.bundleProcessingWaitingGroup.Done()
+}
+
+func (syncer *ManagedClusterLabelsBundleSyncer) getManagedClusterLastProcessedTimestamp(name string) *time.Time {
+	timestamp, found := syncer.managedClusterToTimestampMap[name]
+	if found {
+		return timestamp
+	}
+
+	timestamp = &time.Time{}
+	syncer.managedClusterToTimestampMap[name] = timestamp
+
+	return timestamp
 }
