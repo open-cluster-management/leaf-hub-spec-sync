@@ -2,6 +2,7 @@ package bundles
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -10,9 +11,11 @@ import (
 	clusterv1 "github.com/open-cluster-management/api/cluster/v1"
 	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	"github.com/stolostron/hub-of-hubs-data-types/bundle/spec"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/helpers"
 	k8sworkerpool "github.com/stolostron/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -20,6 +23,7 @@ import (
 const (
 	periodicApplyInterval = 5 * time.Second
 	defaultNamespace      = "default"
+	hohFieldManager       = "hoh-agent"
 )
 
 // AddManagedClusterLabelsBundleSyncer adds UnstructuredBundleSyncer to the manager.
@@ -165,9 +169,16 @@ func (syncer *ManagedClusterLabelsBundleSyncer) updateManagedClusterAsync(labels
 			delete(managedCluster.Labels, labelKey)
 		}
 
-		// update CR with replace API: fails if CR was modified since client.get
-		if err := k8sClient.Update(ctx, managedCluster, &client.UpdateOptions{}); err != nil {
+		if err := syncer.UpdateManagedFieldEntry(managedCluster, labelsSpec); err != nil {
 			syncer.log.Error(err, "failed to update managed cluster", "name", labelsSpec.Name)
+			return
+		}
+
+		// update CR with replace API: fails if CR was modified since client.get
+		if err := k8sClient.Update(ctx, managedCluster,
+			&client.UpdateOptions{FieldManager: hohFieldManager}); err != nil {
+			syncer.log.Error(err, "failed to update managed cluster", "name", labelsSpec.Name)
+			return
 		}
 
 		syncer.log.Info("managed cluster updated", "name", labelsSpec.Name)
@@ -192,4 +203,46 @@ func (syncer *ManagedClusterLabelsBundleSyncer) getManagedClusterLastProcessedTi
 	syncer.managedClusterToTimestampMap[name] = timestamp
 
 	return timestamp
+}
+
+// UpdateManagedFieldEntry inserts/updates the hohFieldManager managed-field entry in a given managedCluster.
+func (syncer *ManagedClusterLabelsBundleSyncer) UpdateManagedFieldEntry(managedCluster *clusterv1.ManagedCluster,
+	managedClusterLabelsSpec *spec.ManagedClusterLabelsSpec) error {
+	// create label fields
+	labelFields := helpers.LabelsField{Labels: map[string]struct{}{}}
+	for key := range managedClusterLabelsSpec.Labels {
+		labelFields.Labels[fmt.Sprintf("f:%s", key)] = struct{}{}
+	}
+	// create metadata field
+	metadataField := helpers.MetadataField{LabelsField: labelFields}
+
+	metadataFieldRaw, err := json.Marshal(metadataField)
+	if err != nil {
+		return fmt.Errorf("failed to create ManagedFieldsEntry - %w", err)
+	}
+	// create entry
+	managedFieldEntry := v1.ManagedFieldsEntry{
+		Manager:    hohFieldManager,
+		Operation:  v1.ManagedFieldsOperationUpdate,
+		APIVersion: managedCluster.APIVersion,
+		Time:       &v1.Time{Time: managedClusterLabelsSpec.UpdateTimestamp},
+		FieldsV1:   &v1.FieldsV1{Raw: metadataFieldRaw},
+	}
+	// get entry index
+	index := -1
+
+	for i, entry := range managedCluster.ManagedFields {
+		if entry.Manager == hohFieldManager {
+			index = i
+			break
+		}
+	}
+	// replace
+	if index >= 0 {
+		managedCluster.ManagedFields[index] = managedFieldEntry
+	}
+	// otherwise, insert
+	managedCluster.ManagedFields = append(managedCluster.ManagedFields, managedFieldEntry)
+
+	return nil
 }
