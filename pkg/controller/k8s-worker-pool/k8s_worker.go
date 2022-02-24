@@ -15,12 +15,16 @@ func newK8sWorker(log logr.Logger, workerID int, kubeConfig *rest.Config, jobsQu
 		return nil, fmt.Errorf("failed to initialize k8s worker - %w", err)
 	}
 
+	return newK8sWorkerWithClient(log, workerID, k8sClient, jobsQueue), nil
+}
+
+func newK8sWorkerWithClient(log logr.Logger, workerID int, k8sClient client.Client, jobsQueue chan *K8sJob) *k8sWorker {
 	return &k8sWorker{
 		log:       log,
 		workerID:  workerID,
 		k8sClient: k8sClient,
 		jobsQueue: jobsQueue,
-	}, nil
+	}
 }
 
 // k8sWorker worker within the K8s Worker pool. runs as a goroutine and invokes K8sJobs.
