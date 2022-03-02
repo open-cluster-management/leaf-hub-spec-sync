@@ -63,6 +63,19 @@ rules:
   - users
   verbs:
   - impersonate
+- apiGroups:
+  - "app.k8s.io"
+  resources:
+  - applications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+  - deletecollection
 ---
 
 kind: ClusterRoleBinding
