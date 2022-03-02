@@ -49,10 +49,13 @@ func AddK8sWorkerPool(log logr.Logger, mgr ctrl.Manager) (*K8sWorkerPool, error)
 		jobsQueue:                  make(chan *K8sJob, k8sWorkerPoolSize), // each worker can handle at most one job at a time
 		poolSize:                   k8sWorkerPoolSize,
 		enforceHohRbac:             enforceHohRbac,
+		initializationWaitingGroup: sync.WaitGroup{},
 		impersonationManager:       rbac.NewImpersonationManager(config),
 		impersonationWorkersQueues: make(map[string]chan *K8sJob),
 		impersonationWorkersLock:   sync.Mutex{},
 	}
+
+	k8sWorkerPool.initializationWaitingGroup.Add(1)
 
 	if err := mgr.Add(k8sWorkerPool); err != nil {
 		return nil, fmt.Errorf("failed to initialize k8s workers pool - %w", err)
@@ -99,6 +102,7 @@ type K8sWorkerPool struct {
 	jobsQueue                  chan *K8sJob
 	poolSize                   int
 	enforceHohRbac             bool
+	initializationWaitingGroup sync.WaitGroup
 	impersonationManager       *rbac.ImpersonationManager
 	impersonationWorkersQueues map[string]chan *K8sJob
 	impersonationWorkersLock   sync.Mutex
@@ -107,6 +111,7 @@ type K8sWorkerPool struct {
 // Start function starts the k8s workers pool.
 func (pool *K8sWorkerPool) Start(ctx context.Context) error {
 	pool.ctx = ctx
+	pool.initializationWaitingGroup.Done() // once context is saved, it's safe to let RunAsync work with no concerns.
 
 	for i := 1; i <= pool.poolSize; i++ {
 		worker, err := newK8sWorker(pool.log, i, pool.kubeConfig, pool.jobsQueue)
@@ -131,6 +136,8 @@ func (pool *K8sWorkerPool) Start(ctx context.Context) error {
 
 // RunAsync inserts the K8sJob into the working queue.
 func (pool *K8sWorkerPool) RunAsync(job *K8sJob) {
+	pool.initializationWaitingGroup.Wait() // start running jobs only after some initialization steps have finished.
+
 	userIdentity, err := pool.impersonationManager.GetUserIdentity(job.obj)
 	if err != nil {
 		pool.log.Error(err, "failed to get user identity from obj")
