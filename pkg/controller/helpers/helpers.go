@@ -5,14 +5,17 @@ import (
 	"fmt"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	controllerName      = "leaf-hub-spec-sync"
-	notFoundErrorSuffix = "not found"
+	controllerName           = "leaf-hub-spec-sync"
+	notFoundErrorSuffix      = "not found"
+	alreadyExistsErrorSuffix = "already exists"
 )
 
 // UpdateObject function updates a given k8s object.
@@ -45,4 +48,18 @@ func DeleteObject(ctx context.Context, k8sClient client.Client, obj *unstructure
 	}
 
 	return true, nil
+}
+
+// CreateNamespaceIfNotExist creates a namespace in case it doesn't exist.
+func CreateNamespaceIfNotExist(ctx context.Context, k8sClient client.Client, namespace string) error {
+	namespaceObj := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: namespace},
+	}
+
+	if err := k8sClient.Create(ctx, namespaceObj); err != nil &&
+		!strings.HasSuffix(err.Error(), alreadyExistsErrorSuffix) {
+		return fmt.Errorf("failed to create namespace - %w", err)
+	}
+
+	return nil
 }

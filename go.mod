@@ -5,12 +5,13 @@ go 1.17
 require (
 	github.com/confluentinc/confluent-kafka-go v1.7.0
 	github.com/go-logr/logr v0.4.0
-	github.com/stolostron/hub-of-hubs-data-types v0.3.1
-	github.com/stolostron/hub-of-hubs-kafka-transport v0.3.1
-	github.com/stolostron/hub-of-hubs-message-compression v0.3.1
 	github.com/open-horizon/edge-sync-service-client v0.0.0-20190711093406-dc3a19905da2
 	github.com/operator-framework/operator-sdk v0.19.4
 	github.com/spf13/pflag v1.0.5
+	github.com/stolostron/hub-of-hubs-data-types v0.3.1
+	github.com/stolostron/hub-of-hubs-kafka-transport v0.3.1
+	github.com/stolostron/hub-of-hubs-message-compression v0.3.1
+	k8s.io/api v0.21.3
 	k8s.io/apimachinery v0.21.3
 	k8s.io/client-go v12.0.0+incompatible
 	sigs.k8s.io/controller-runtime v0.9.2
@@ -67,7 +68,6 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
-	k8s.io/api v0.21.3 // indirect
 	k8s.io/apiextensions-apiserver v0.21.3 // indirect
 	k8s.io/component-base v0.21.3 // indirect
 	k8s.io/klog v1.0.0 // indirect

@@ -60,17 +60,25 @@ func (syncer *BundleSpecSync) sync(ctx context.Context) {
 			// send k8s jobs to workers to update objects
 			for _, obj := range receivedBundle.Objects {
 				syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(obj, func(ctx context.Context,
-					k8sClient client.Client, obj *unstructured.Unstructured) {
-					syncer.updateObject(ctx, k8sClient, obj)
+					k8sClient client.Client, obj *unstructured.Unstructured) error {
+					if err := syncer.updateObject(ctx, k8sClient, obj); err != nil {
+						return fmt.Errorf("failed to update object - %w", err)
+					}
+
 					syncer.bundleProcessingWaitingGroup.Done()
+					return nil
 				}))
 			}
 			// send k8s jobs to workers to delete objects
 			for _, obj := range receivedBundle.DeletedObjects {
 				syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(obj, func(ctx context.Context,
-					k8sClient client.Client, obj *unstructured.Unstructured) {
-					syncer.deleteObject(ctx, k8sClient, obj)
+					k8sClient client.Client, obj *unstructured.Unstructured) error {
+					if err := syncer.deleteObject(ctx, k8sClient, obj); err != nil {
+						return fmt.Errorf("failed to delete object - %w", err)
+					}
+
 					syncer.bundleProcessingWaitingGroup.Done()
+					return nil
 				}))
 			}
 			// ensure all updates and deletes have finished before reading next bundle
@@ -80,23 +88,28 @@ func (syncer *BundleSpecSync) sync(ctx context.Context) {
 }
 
 func (syncer *BundleSpecSync) updateObject(ctx context.Context, k8sClient client.Client,
-	obj *unstructured.Unstructured) {
+	obj *unstructured.Unstructured) error {
 	if err := helpers.UpdateObject(ctx, k8sClient, obj); err != nil {
-		syncer.log.Error(err, "failed to update object", "name", obj.GetName(), "namespace",
-			obj.GetNamespace(), "kind", obj.GetKind())
-	} else {
-		syncer.log.Info("object updated", "name", obj.GetName(), "namespace", obj.GetNamespace(),
-			"kind", obj.GetKind())
+		return fmt.Errorf("failed to update object - %w", err)
 	}
+
+	syncer.log.Info("object updated", "name", obj.GetName(), "namespace", obj.GetNamespace(),
+		"kind", obj.GetKind())
+
+	return nil
 }
 
 func (syncer *BundleSpecSync) deleteObject(ctx context.Context, k8sClient client.Client,
-	obj *unstructured.Unstructured) {
-	if deleted, err := helpers.DeleteObject(ctx, k8sClient, obj); err != nil {
-		syncer.log.Error(err, "failed to delete object", "name", obj.GetName(), "namespace",
-			obj.GetNamespace(), "kind", obj.GetKind())
-	} else if deleted {
+	obj *unstructured.Unstructured) error {
+	deleted, err := helpers.DeleteObject(ctx, k8sClient, obj)
+	if err != nil {
+		return fmt.Errorf("failed to delete object - %w", err)
+	}
+
+	if deleted {
 		syncer.log.Info("object deleted", "name", obj.GetName(), "namespace", obj.GetNamespace(),
 			"kind", obj.GetKind())
 	}
+
+	return nil
 }

@@ -45,7 +45,10 @@ func (worker *k8sWorker) start(ctx context.Context) {
 				return
 
 			case job := <-worker.jobsQueue: // k8sWorker received a job request.
-				job.handlerFunc(ctx, worker.k8sClient, job.obj)
+				if err := job.handlerFunc(ctx, worker.k8sClient, job.obj); err != nil {
+					worker.log.Error(err, "failed to handle job", "workerID", worker.workerID,
+						"name", job.obj.GetName(), "namespace", job.obj.GetNamespace(), "kind", job.obj.GetKind())
+				}
 			}
 		}
 	}()

@@ -42,17 +42,26 @@ Go to the [Contributing guide](CONTRIBUTING.md) to learn how to get involved.
     $ export IMAGE=$REGISTRY/$(basename $(pwd)):latest
     ```
     
-1. Set the `LH_ID` environment variable to hold the leaf hub unique id.
-   ```
-   $ export LH_ID=...
-   ``` 
+1.  Set the `LH_ID` environment variable to hold the leaf hub unique id.
+    ```
+    $ export LH_ID=...
+    ```
 
-1. Set the `TRANSPORT_TYPE` environment variable to "kafka" or "sync-service" to set which transport to use.
+1.  Set the `ENFORCE_HOH_RBAC` environment variable to `true` or `false`.  
+    Setting to `true` means that the operations will fail in case the required namespace doesn't exist or the requesting 
+    user has insufficient permissions.  
+    Setting to `false` means that the controller will create missing namespaces and use admin permissions to create
+    resources in case the requesting user has insufficient permissions.
+    ```
+    $ export ENFORCE_HOH_RBAC=...
+    ```
+
+1.  Set the `TRANSPORT_TYPE` environment variable to `kafka` or `sync-service` to set which transport to use.
     ```
     $ export TRANSPORT_TYPE=...
     ```
 
-1. If you set kafka as transport, set the following environment variables:
+1.  If you set `kafka` as transport, set the following environment variables:
     1. Set `KAFKA_BOOTSTRAP_SERVERS` environment variable to hold the
        address of the brokers to connect to.
         ```
@@ -65,7 +74,7 @@ Go to the [Contributing guide](CONTRIBUTING.md) to learn how to get involved.
         $ export KAFKA_SSL_CA=$(cat PATH_TO_CA | base64 -w 0)
         ```
 
-1. Otherwise, if you set sync-service as transport, set the following:
+1. Otherwise, if you set `sync-service` as transport, set the following:
     1. Set the `SYNC_SERVICE_PORT` environment variable to hold the ESS port as was setup in the leaf hub.
         ```
         $ export SYNC_SERVICE_PORT=...
