@@ -12,6 +12,7 @@ import (
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/helpers"
 	k8sworkerpool "github.com/stolostron/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/rbac"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -90,11 +91,15 @@ func (syncer *BundleSpecSync) sync(ctx context.Context) {
 
 		case receivedBundle := <-syncer.bundleUpdatesChan: // handle the bundle
 			syncer.bundleProcessingWaitingGroup.Add(len(receivedBundle.Objects) + len(receivedBundle.DeletedObjects))
+
+			failedObjects := make([]*unstructured.Unstructured, 0)
 			// send k8s jobs to workers to update objects
 			for _, obj := range receivedBundle.Objects {
 				syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(obj, func(ctx context.Context,
 					k8sClient client.Client, obj *unstructured.Unstructured) {
-					syncer.updateObject(ctx, k8sClient, obj)
+					if err := syncer.updateObject(ctx, k8sClient, obj); err != nil {
+						failedObjects = append(failedObjects, obj)
+					}
 					syncer.bundleProcessingWaitingGroup.Done()
 				}))
 			}
@@ -106,30 +111,70 @@ func (syncer *BundleSpecSync) sync(ctx context.Context) {
 					syncer.bundleProcessingWaitingGroup.Done()
 				}))
 			}
-			// ensure all updates and deletes have finished before reading next bundle
+			// ensure all updates and deletes have finished before handling failed objects and then read next bundle
 			syncer.bundleProcessingWaitingGroup.Wait()
+
+			syncer.handleFailedObjects(failedObjects)
 		}
 	}
 }
 
 func (syncer *BundleSpecSync) updateObject(ctx context.Context, k8sClient client.Client,
-	obj *unstructured.Unstructured) {
+	obj *unstructured.Unstructured) error {
 	if err := helpers.UpdateObject(ctx, k8sClient, obj); err != nil {
-		syncer.log.Error(err, "failed to update object", "name", obj.GetName(), "namespace",
-			obj.GetNamespace(), "kind", obj.GetKind())
-	} else {
-		syncer.log.Info("object updated", "name", obj.GetName(), "namespace", obj.GetNamespace(),
-			"kind", obj.GetKind())
+		syncer.logFailure(err, "failed to update object", obj)
+		return fmt.Errorf("failed to update object - %w", err)
 	}
+
+	syncer.log.Info("object updated", "name", obj.GetName(), "namespace", obj.GetNamespace(),
+		"kind", obj.GetKind())
+
+	return nil
 }
 
 func (syncer *BundleSpecSync) deleteObject(ctx context.Context, k8sClient client.Client,
 	obj *unstructured.Unstructured) {
 	if deleted, err := helpers.DeleteObject(ctx, k8sClient, obj); err != nil {
-		syncer.log.Error(err, "failed to delete object", "name", obj.GetName(), "namespace",
-			obj.GetNamespace(), "kind", obj.GetKind())
+		syncer.logFailure(err, "failed to delete object", obj)
 	} else if deleted {
 		syncer.log.Info("object deleted", "name", obj.GetName(), "namespace", obj.GetNamespace(),
 			"kind", obj.GetKind())
 	}
+}
+
+func (syncer *BundleSpecSync) handleFailedObjects(objects []*unstructured.Unstructured) {
+	if syncer.enforceHohRbac {
+		return // if hoh rbac should be enforced, do not create missing namespaces nor create objects
+	}
+
+	syncer.bundleProcessingWaitingGroup.Add(len(objects))
+
+	for _, obj := range objects {
+		// anonymize obj (remove user identity from it, to make handler function run using the controller identity)
+		syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(syncer.anonymize(obj), func(ctx context.Context,
+			k8sClient client.Client, obj *unstructured.Unstructured) {
+			if err := helpers.CreateNamespaceIfNotExist(ctx, k8sClient, obj.GetNamespace()); err != nil {
+				syncer.logFailure(err, "failed to create namespace", obj)
+			}
+			if err := syncer.updateObject(ctx, k8sClient, obj); err != nil {
+				syncer.logFailure(err, "failed to update object", obj)
+			}
+			syncer.bundleProcessingWaitingGroup.Done()
+		}))
+	}
+
+	syncer.bundleProcessingWaitingGroup.Wait()
+}
+
+func (syncer *BundleSpecSync) anonymize(obj *unstructured.Unstructured) *unstructured.Unstructured {
+	annotations := obj.GetAnnotations()
+	delete(annotations, rbac.UserIdentityAnnotation)
+	obj.SetAnnotations(annotations)
+
+	return obj
+}
+
+func (syncer *BundleSpecSync) logFailure(err error, msg string, obj *unstructured.Unstructured) {
+	syncer.log.Error(err, msg, "name", obj.GetName(), "namespace", obj.GetNamespace(),
+		"kind", obj.GetKind())
 }

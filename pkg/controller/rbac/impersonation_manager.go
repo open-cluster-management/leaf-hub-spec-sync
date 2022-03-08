@@ -11,8 +11,9 @@ import (
 
 const (
 	// NoUserIdentity is used to mark no user identity is defined in a resource.
-	NoUserIdentity         = ""
-	userIdentityAnnotation = "open-cluster-management.io/user-identity"
+	NoUserIdentity = ""
+	// UserIdentityAnnotation is the annotation that is used to store the user identity.
+	UserIdentityAnnotation = "open-cluster-management.io/user-identity"
 )
 
 // NewImpersonationManager creates a new instance of ImpersonationManager.
@@ -52,7 +53,7 @@ func (manager *ImpersonationManager) GetUserIdentity(obj *unstructured.Unstructu
 		return NoUserIdentity, nil
 	}
 
-	if base64UserIdentity, found := annotations[userIdentityAnnotation]; found { // if annotation exists
+	if base64UserIdentity, found := annotations[UserIdentityAnnotation]; found { // if annotation exists
 		decodedUserIdentity, err := base64.StdEncoding.DecodeString(base64UserIdentity)
 		if err != nil {
 			return NoUserIdentity, fmt.Errorf("failed to decode base64 user identity - %w", err)
