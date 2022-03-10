@@ -135,6 +135,7 @@ func (syncer *BundleSpecSync) updateObject(ctx context.Context, k8sClient client
 	if err := helpers.UpdateObject(ctx, k8sClient, obj); err != nil {
 		syncer.log.Error(err, "failed to update object", "name", obj.GetName(), "namespace",
 			obj.GetNamespace(), "kind", obj.GetKind())
+		return
 	}
 
 	syncer.log.Info("object updated", "name", obj.GetName(), "namespace", obj.GetNamespace(),
