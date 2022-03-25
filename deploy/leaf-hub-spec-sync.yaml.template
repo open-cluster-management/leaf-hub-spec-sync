@@ -57,6 +57,25 @@ rules:
   - create
   - update
   - delete
+- apiGroups:
+  - ""
+  resources:
+  - users
+  verbs:
+  - impersonate
+- apiGroups:
+  - "app.k8s.io"
+  resources:
+  - applications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+  - deletecollection
 ---
 
 kind: ClusterRoleBinding
@@ -121,6 +140,8 @@ spec:
               value: "5"
             - name: K8S_CLIENTS_POOL_SIZE
               value: "$K8S_CLIENTS_POOL_SIZE"
+            - name: ENFORCE_HOH_RBAC
+              value: "$ENFORCE_HOH_RBAC"
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:

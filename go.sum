@@ -905,6 +905,10 @@ github.com/spf13/viper v1.7.0/go.mod h1:8WkrPz2fc9jxqZNCJI/76HCieCp4Q8HaLFoCha5q
 github.com/stoewer/go-strcase v1.2.0/go.mod h1:IBiWB2sKIp3wVVQ3Y035++gc+knqhUQag1KpM8ahLw8=
 github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220217143844-4966565e22c9 h1:1cItDi85KkE4laKCZbVzScM1QggVhKSD2zLGivbt/+4=
 github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220217143844-4966565e22c9/go.mod h1:TBfuHiBN/KAEOR+8MB61NVfMLTsUAUaEBWtxA+ARYyY=
+github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220324192634-f1cac4cc837e h1:VUnwOwGyAMZhRnSQo1TSozgNpcY4wg9Au7vp1NrVhNc=
+github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220324192634-f1cac4cc837e/go.mod h1:TBfuHiBN/KAEOR+8MB61NVfMLTsUAUaEBWtxA+ARYyY=
+github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220325172236-d57d80642262 h1:76j0cp5k0Wk+NwJCAynO5BQB/8fRRThlwP9Dvui8yEU=
+github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220325172236-d57d80642262/go.mod h1:TBfuHiBN/KAEOR+8MB61NVfMLTsUAUaEBWtxA+ARYyY=
 github.com/stolostron/hub-of-hubs-kafka-transport v0.3.1 h1:9x9otVmtzBydhyIh4WYfQKEnVhnZYFFWqFAGc8X1jEU=
 github.com/stolostron/hub-of-hubs-kafka-transport v0.3.1/go.mod h1:ORmbTRxjnHnO+389b0DZsem6qNJcSvj1Lo2JGBMwma8=
 github.com/stolostron/hub-of-hubs-kafka-transport v0.3.2-0.20220216134154-a8d333b944b1 h1:RVQ7VMNB92iz31rKZFbShRb5WG/LqDGkpxiscTVZZdw=

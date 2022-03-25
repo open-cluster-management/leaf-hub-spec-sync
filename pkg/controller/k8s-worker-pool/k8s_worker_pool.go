@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/rbac"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -24,14 +26,22 @@ func AddK8sWorkerPool(log logr.Logger, mgr ctrl.Manager) (*K8sWorkerPool, error)
 		return nil, fmt.Errorf("failed to get in cluster kubeconfig - %w", err)
 	}
 
-	k8sWorkerPoolSize := readEnvVars(log)
+	// pool size is used for controller workers.
+	// for impersonation workers we have additional workers, one per impersonated user.
+	poolSize := readEnvVars(log)
 
 	k8sWorkerPool := &K8sWorkerPool{
-		log:        log,
-		kubeConfig: config,
-		jobsQueue:  make(chan *K8sJob, k8sWorkerPoolSize), // each worker can handle at most one job at a time.
-		poolSize:   k8sWorkerPoolSize,
+		log:                        log,
+		kubeConfig:                 config,
+		jobsQueue:                  make(chan *K8sJob, poolSize), // each worker can handle at most one job at a time
+		poolSize:                   poolSize,
+		initializationWaitingGroup: sync.WaitGroup{},
+		impersonationManager:       rbac.NewImpersonationManager(config),
+		impersonationWorkersQueues: make(map[string]chan *K8sJob),
+		impersonationWorkersLock:   sync.Mutex{},
 	}
+
+	k8sWorkerPool.initializationWaitingGroup.Add(1)
 
 	if err := mgr.Add(k8sWorkerPool); err != nil {
 		return nil, fmt.Errorf("failed to initialize k8s workers pool - %w", err)
@@ -41,7 +51,7 @@ func AddK8sWorkerPool(log logr.Logger, mgr ctrl.Manager) (*K8sWorkerPool, error)
 }
 
 func readEnvVars(log logr.Logger) int {
-	k8sClientsPoolSize, found := os.LookupEnv(envVarK8sClientsPoolSize)
+	k8sClientsPoolSizeString, found := os.LookupEnv(envVarK8sClientsPoolSize)
 	if !found {
 		log.Info(fmt.Sprintf("env variable %s not found, using default value %d", envVarK8sClientsPoolSize,
 			defaultK8sClientsPoolSize))
@@ -49,27 +59,35 @@ func readEnvVars(log logr.Logger) int {
 		return defaultK8sClientsPoolSize
 	}
 
-	value, err := strconv.Atoi(k8sClientsPoolSize)
-	if err != nil || value < 1 {
+	poolSize, err := strconv.Atoi(k8sClientsPoolSizeString)
+	if err != nil || poolSize < 1 {
 		log.Info(fmt.Sprintf("env var %s invalid value: %s, using default value %d", envVarK8sClientsPoolSize,
-			k8sClientsPoolSize, defaultK8sClientsPoolSize))
+			k8sClientsPoolSizeString, defaultK8sClientsPoolSize))
 
 		return defaultK8sClientsPoolSize
 	}
 
-	return value
+	return poolSize
 }
 
 // K8sWorkerPool pool that creates all k8s workers and the assigns k8s jobs to available workers.
 type K8sWorkerPool struct {
-	log        logr.Logger
-	kubeConfig *rest.Config
-	jobsQueue  chan *K8sJob
-	poolSize   int
+	ctx                        context.Context
+	log                        logr.Logger
+	kubeConfig                 *rest.Config
+	jobsQueue                  chan *K8sJob
+	poolSize                   int
+	initializationWaitingGroup sync.WaitGroup
+	impersonationManager       *rbac.ImpersonationManager
+	impersonationWorkersQueues map[string]chan *K8sJob
+	impersonationWorkersLock   sync.Mutex
 }
 
 // Start function starts the k8s workers pool.
 func (pool *K8sWorkerPool) Start(ctx context.Context) error {
+	pool.ctx = ctx
+	pool.initializationWaitingGroup.Done() // once context is saved, it's safe to let RunAsync work with no concerns.
+
 	for i := 1; i <= pool.poolSize; i++ {
 		worker, err := newK8sWorker(pool.log, i, pool.kubeConfig, pool.jobsQueue)
 		if err != nil {
@@ -82,6 +100,10 @@ func (pool *K8sWorkerPool) Start(ctx context.Context) error {
 	<-ctx.Done() // blocking wait for stop event
 
 	// context was cancelled, do cleanup
+	for _, workerQueue := range pool.impersonationWorkersQueues {
+		close(workerQueue)
+	}
+
 	close(pool.jobsQueue)
 
 	return nil
@@ -89,5 +111,45 @@ func (pool *K8sWorkerPool) Start(ctx context.Context) error {
 
 // RunAsync inserts the K8sJob into the working queue.
 func (pool *K8sWorkerPool) RunAsync(job *K8sJob) {
-	pool.jobsQueue <- job
+	pool.initializationWaitingGroup.Wait() // start running jobs only after some initialization steps have finished.
+
+	userIdentity, err := pool.impersonationManager.GetUserIdentity(job.obj)
+	if err != nil {
+		pool.log.Error(err, "failed to get user identity from obj")
+		return
+	}
+	// if it doesn't contain impersonation info, let the controller worker pool handle it.
+	if userIdentity == rbac.NoUserIdentity {
+		pool.jobsQueue <- job
+		return
+	}
+	// otherwise, need to impersonate and use the specific worker to enforce permissions.
+	pool.impersonationWorkersLock.Lock()
+
+	if _, found := pool.impersonationWorkersQueues[userIdentity]; !found {
+		if err := pool.createUserWorker(userIdentity); err != nil {
+			pool.log.Error(err, "failed to create user worker", "user", userIdentity)
+			return
+		}
+	}
+	// push the job to the queue of the specific worker that uses the user identity
+	workerQueue := pool.impersonationWorkersQueues[userIdentity]
+
+	pool.impersonationWorkersLock.Unlock()
+	workerQueue <- job // since this call might get blocking, first Unlock, then try to insert job into queue
+}
+
+func (pool *K8sWorkerPool) createUserWorker(userIdentity string) error {
+	k8sClient, err := pool.impersonationManager.Impersonate(userIdentity)
+	if err != nil {
+		return fmt.Errorf("failed to impersonate - %w", err)
+	}
+
+	workerQueue := make(chan *K8sJob, pool.poolSize)
+	worker := newK8sWorkerWithClient(pool.log.WithName(fmt.Sprintf("impersonation-%s", userIdentity)),
+		1, k8sClient, workerQueue)
+	worker.start(pool.ctx)
+	pool.impersonationWorkersQueues[userIdentity] = workerQueue
+
+	return nil
 }
