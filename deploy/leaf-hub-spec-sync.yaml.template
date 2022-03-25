@@ -28,6 +28,14 @@ rules:
 - apiGroups:
   - cluster.open-cluster-management.io
   resources:
+  - managedclustersets/join
+  - managedclustersets/bind
+  verbs:
+  - create
+  - delete
+- apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
   - managedclusters
   verbs:
   - get
