@@ -126,11 +126,11 @@ func (syncer *ManagedClusterLabelsBundleSyncer) handleBundle() {
 	syncer.latestBundleLock.Lock()
 	defer syncer.latestBundleLock.Unlock()
 
-	for _, managedClusterMetadata := range syncer.latestBundle.Objects {
-		lastProcessedTimestamp := syncer.getManagedClusterLastProcessedTimestamp(managedClusterMetadata.Name)
-		if managedClusterMetadata.UpdateTimestamp.After(*lastProcessedTimestamp) { // handle (success) once
+	for _, managedClusterLabelsSpec := range syncer.latestBundle.Objects {
+		lastProcessedTimestamp := syncer.getManagedClusterLastProcessedTimestamp(managedClusterLabelsSpec.Name)
+		if managedClusterLabelsSpec.UpdateTimestamp.After(*lastProcessedTimestamp) { // handle (success) once
 			syncer.bundleProcessingWaitingGroup.Add(1)
-			syncer.updateManagedClusterAsync(managedClusterMetadata, lastProcessedTimestamp)
+			syncer.updateManagedClusterAsync(managedClusterLabelsSpec, lastProcessedTimestamp)
 		}
 	}
 
