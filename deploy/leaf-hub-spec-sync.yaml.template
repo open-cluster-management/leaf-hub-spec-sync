@@ -37,6 +37,7 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - namespaces
   - pods
   - configmaps
   - events
