@@ -4,19 +4,26 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	clustersv1 "github.com/open-cluster-management/api/cluster/v1"
+	clusterv1 "github.com/open-cluster-management/api/cluster/v1"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/bundles"
 	k8sworkerpool "github.com/stolostron/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
 	"k8s.io/apimachinery/pkg/runtime"
+	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
+	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 // AddToScheme adds all Resources to the Scheme.
 func AddToScheme(runtimeScheme *runtime.Scheme) error {
-	// add cluster scheme
-	if err := clustersv1.Install(runtimeScheme); err != nil {
-		return fmt.Errorf("failed to add scheme: %w", err)
+	schemeInstallationFuncs := []func(*runtime.Scheme) error{
+		clusterv1alpha1.Install, clusterv1beta1.Install, clusterv1.Install,
+	}
+
+	for _, schemeInstallationFunc := range schemeInstallationFuncs {
+		if err := schemeInstallationFunc(runtimeScheme); err != nil {
+			return fmt.Errorf("failed to install scheme: %w", err)
+		}
 	}
 
 	return nil

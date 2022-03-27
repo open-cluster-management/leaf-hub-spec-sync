@@ -58,6 +58,7 @@ func AddUnstructuredBundleSyncer(log logr.Logger, mgr ctrl.Manager, transportObj
 		datatypes.ApplicationsMsgKey,
 		datatypes.ChannelsMsgKey,
 		datatypes.SubscriptionsMsgKey,
+		datatypes.PlacementsMsgKey,
 		datatypes.ManagedClusterSetsMsgKey,
 		datatypes.ManagedClusterSetBindingsMsgKey,
 	}
