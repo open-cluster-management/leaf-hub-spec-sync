@@ -156,6 +156,7 @@ func (syncer *BundleSpecSync) deleteObject(ctx context.Context, k8sClient client
 func (syncer *BundleSpecSync) anonymize(obj *unstructured.Unstructured) *unstructured.Unstructured {
 	annotations := obj.GetAnnotations()
 	delete(annotations, rbac.UserIdentityAnnotation)
+	delete(annotations, rbac.UserGroupsAnnotation)
 	obj.SetAnnotations(annotations)
 
 	return obj
