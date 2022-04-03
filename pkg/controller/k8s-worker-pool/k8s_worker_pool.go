@@ -119,28 +119,36 @@ func (pool *K8sWorkerPool) RunAsync(job *K8sJob) {
 		return
 	}
 	// if it doesn't contain impersonation info, let the controller worker pool handle it.
-	if userIdentity == rbac.NoUserIdentity {
+	if userIdentity == rbac.NoIdentity {
 		pool.jobsQueue <- job
 		return
 	}
 	// otherwise, need to impersonate and use the specific worker to enforce permissions.
+	base64UserGroups, userGroups, err := pool.impersonationManager.GetUserGroups(job.obj)
+	if err != nil {
+		pool.log.Error(err, "failed to get user groups from obj")
+		return
+	}
+
 	pool.impersonationWorkersLock.Lock()
 
-	if _, found := pool.impersonationWorkersQueues[userIdentity]; !found {
-		if err := pool.createUserWorker(userIdentity); err != nil {
+	workerIdentifier := fmt.Sprintf("%s.%s", userIdentity, base64UserGroups)
+
+	if _, found := pool.impersonationWorkersQueues[workerIdentifier]; !found {
+		if err := pool.createUserWorker(userIdentity, userGroups, workerIdentifier); err != nil {
 			pool.log.Error(err, "failed to create user worker", "user", userIdentity)
 			return
 		}
 	}
 	// push the job to the queue of the specific worker that uses the user identity
-	workerQueue := pool.impersonationWorkersQueues[userIdentity]
+	workerQueue := pool.impersonationWorkersQueues[workerIdentifier]
 
 	pool.impersonationWorkersLock.Unlock()
 	workerQueue <- job // since this call might get blocking, first Unlock, then try to insert job into queue
 }
 
-func (pool *K8sWorkerPool) createUserWorker(userIdentity string) error {
-	k8sClient, err := pool.impersonationManager.Impersonate(userIdentity)
+func (pool *K8sWorkerPool) createUserWorker(userIdentity string, userGroups []string, workerIdentifier string) error {
+	k8sClient, err := pool.impersonationManager.Impersonate(userIdentity, userGroups)
 	if err != nil {
 		return fmt.Errorf("failed to impersonate - %w", err)
 	}
@@ -149,7 +157,7 @@ func (pool *K8sWorkerPool) createUserWorker(userIdentity string) error {
 	worker := newK8sWorkerWithClient(pool.log.WithName(fmt.Sprintf("impersonation-%s", userIdentity)),
 		1, k8sClient, workerQueue)
 	worker.start(pool.ctx)
-	pool.impersonationWorkersQueues[userIdentity] = workerQueue
+	pool.impersonationWorkersQueues[workerIdentifier] = workerQueue
 
 	return nil
 }
