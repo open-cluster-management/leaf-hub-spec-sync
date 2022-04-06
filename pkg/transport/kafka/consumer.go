@@ -199,6 +199,8 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 				"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
 		}
 
+		bundleRegistration.BundleUpdatesChan <- c.genericBundlesUpdatesChan
+
 		return
 	}
 
