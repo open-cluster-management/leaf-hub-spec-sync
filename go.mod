@@ -9,13 +9,12 @@ require (
 	github.com/open-horizon/edge-sync-service-client v0.0.0-20190711093406-dc3a19905da2
 	github.com/operator-framework/operator-sdk v0.19.4
 	github.com/spf13/pflag v1.0.5
-	github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220325172236-d57d80642262
+	github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220403121807-a596cebbd7a4
 	github.com/stolostron/hub-of-hubs-kafka-transport v0.3.2-0.20220216134627-cc88dc55ceac
 	github.com/stolostron/hub-of-hubs-message-compression v0.3.1
 	k8s.io/api v0.21.3
 	k8s.io/apimachinery v0.21.3
 	k8s.io/client-go v12.0.0+incompatible
-	open-cluster-management.io/api v0.6.0
 	sigs.k8s.io/controller-runtime v0.9.2
 )
 

@@ -12,7 +12,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// AddToScheme adds all Resources to the Scheme.
+// AddToScheme adds Resources that have to be fetched to the Scheme (no need to add scheme of resources that are applied
+// as a part of generic bundles).
 func AddToScheme(s *runtime.Scheme) error {
 	if err := clustersv1.Install(s); err != nil {
 		return fmt.Errorf("failed to install scheme: %w", err)

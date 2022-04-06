@@ -78,8 +78,8 @@ github.com/prometheus/procfs v0.6.0 h1:mxy4L2jP6qMonqmq+aTtOx1ifVWUgG/TAmntgbh3x
 github.com/prometheus/procfs v0.6.0/go.mod h1:cz+aTbrPOrUb4q7XlbU9ygM+/jj0fzG6c1xBZuNvfVA=
 github.com/spf13/pflag v1.0.5 h1:iy+VFUOCP1a+8yFto/drg2CJ5u0yRoB7fZw3DKv/JXA=
 github.com/spf13/pflag v1.0.5/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
-github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220325172236-d57d80642262 h1:76j0cp5k0Wk+NwJCAynO5BQB/8fRRThlwP9Dvui8yEU=
-github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220325172236-d57d80642262/go.mod h1:TBfuHiBN/KAEOR+8MB61NVfMLTsUAUaEBWtxA+ARYyY=
+github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220403121807-a596cebbd7a4 h1:2byxhx1Q+OuylGF7wlJJFvsqfjas6IBthDqF16UeIs8=
+github.com/stolostron/hub-of-hubs-data-types v0.3.2-0.20220403121807-a596cebbd7a4/go.mod h1:TBfuHiBN/KAEOR+8MB61NVfMLTsUAUaEBWtxA+ARYyY=
 github.com/stolostron/hub-of-hubs-kafka-transport v0.3.2-0.20220216134627-cc88dc55ceac h1:Yab0K7CZI4eipcbMowxy9NG5JadY3F4Eg4ms3xXSD2M=
 github.com/stolostron/hub-of-hubs-kafka-transport v0.3.2-0.20220216134627-cc88dc55ceac/go.mod h1:ORmbTRxjnHnO+389b0DZsem6qNJcSvj1Lo2JGBMwma8=
 github.com/stolostron/hub-of-hubs-message-compression v0.3.1 h1:PMRyWs3ixHNqYv4Xiq9VIHcok4AiU7yMfjjbyOzouWQ=
@@ -134,8 +134,6 @@ k8s.io/kube-openapi v0.0.0-20210817084001-7fbd8d59e5b8 h1:Xxl9TLJ30BJ1pGWfGZnqbp
 k8s.io/kube-openapi v0.0.0-20210817084001-7fbd8d59e5b8/go.mod h1:foAE7XkrXQ1Qo2eWsW/iWksptrVdbl6t+vscSdmmGjk=
 k8s.io/utils v0.0.0-20210802155522-efc7438f0176 h1:Mx0aa+SUAcNRQbs5jUzV8lkDlGFU8laZsY9jrcVX5SY=
 k8s.io/utils v0.0.0-20210802155522-efc7438f0176/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
-open-cluster-management.io/api v0.6.0 h1:PzR1G/d9YmwL742lgJgFgsEJs6i8Zg05pdIhK/iLZV4=
-open-cluster-management.io/api v0.6.0/go.mod h1:0IUTh8J+p4pv1THh1r9oO0luX9Z1FLDEAmvzW09qC0o=
 sigs.k8s.io/controller-runtime v0.9.2 h1:MnCAsopQno6+hI9SgJHKddzXpmv2wtouZz6931Eax+Q=
 sigs.k8s.io/controller-runtime v0.9.2/go.mod h1:TxzMCHyEUpaeuOiZx/bIdc2T81vfs/aKdvJt9wuu0zk=
 sigs.k8s.io/structured-merge-diff/v4 v4.1.2 h1:Hr/htKFmJEbtMgS/UD0N+gtgctAqz81t3nu+sPzynno=
