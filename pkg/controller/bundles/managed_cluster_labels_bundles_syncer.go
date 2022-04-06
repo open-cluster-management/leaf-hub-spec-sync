@@ -22,7 +22,6 @@ import (
 
 const (
 	periodicApplyInterval = 5 * time.Second
-	defaultNamespace      = "default"
 	hohFieldManager       = "hoh-agent"
 )
 
@@ -41,7 +40,7 @@ func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, tran
 		latestBundleLock:             sync.Mutex{},
 	}); err != nil {
 		close(bundleUpdatesChan)
-		return fmt.Errorf("failed to add unstructured bundles spec syncer - %w", err)
+		return fmt.Errorf("failed to add managed cluster labels bundles syncer - %w", err)
 	}
 
 	transportObj.Register(datatypes.ManagedClustersLabelsMsgKey, &transport.CustomBundleRegistration{
@@ -127,10 +126,10 @@ func (syncer *managedClusterLabelsBundleSyncer) handleBundle() {
 	defer syncer.latestBundleLock.Unlock()
 
 	for _, managedClusterLabelsSpec := range syncer.latestBundle.Objects {
-		lastProcessedTimestamp := syncer.getManagedClusterLastProcessedTimestamp(managedClusterLabelsSpec.ClusterName)
-		if managedClusterLabelsSpec.UpdateTimestamp.After(*lastProcessedTimestamp) { // handle (success) once
+		lastProcessedTimestampPtr := syncer.getManagedClusterLastProcessedTimestamp(managedClusterLabelsSpec.ClusterName)
+		if managedClusterLabelsSpec.UpdateTimestamp.After(*lastProcessedTimestampPtr) { // handle (success) once
 			syncer.bundleProcessingWaitingGroup.Add(1)
-			syncer.updateManagedClusterAsync(managedClusterLabelsSpec, lastProcessedTimestamp)
+			syncer.updateManagedClusterAsync(managedClusterLabelsSpec, lastProcessedTimestampPtr)
 		}
 	}
 
@@ -139,23 +138,22 @@ func (syncer *managedClusterLabelsBundleSyncer) handleBundle() {
 }
 
 func (syncer *managedClusterLabelsBundleSyncer) updateManagedClusterAsync(labelsSpec *spec.ManagedClusterLabelsSpec,
-	lastProcessedTimestampInMap *time.Time) {
+	lastProcessedTimestampPtr *time.Time) {
 	syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(labelsSpec, func(ctx context.Context,
 		k8sClient client.Client, obj interface{},
 	) {
+		defer syncer.bundleProcessingWaitingGroup.Done()
+
 		managedCluster := &clusterv1.ManagedCluster{}
 		if err := k8sClient.Get(ctx, client.ObjectKey{
-			Name:      labelsSpec.ClusterName,
-			Namespace: defaultNamespace,
+			Name: labelsSpec.ClusterName,
 		}, managedCluster); k8serrors.IsNotFound(err) {
 			syncer.log.Info("managed cluster ignored - not found", "name", labelsSpec.ClusterName)
-			syncer.managedClusterMarkUpdated(labelsSpec, lastProcessedTimestampInMap) // if not found then irrelevant
+			syncer.managedClusterMarkUpdated(labelsSpec, lastProcessedTimestampPtr) // if not found then irrelevant
 
 			return
 		} else if err != nil {
 			syncer.log.Error(err, "failed to get managed cluster", "name", labelsSpec.ClusterName)
-			syncer.bundleProcessingWaitingGroup.Done()
-
 			return
 		}
 
@@ -182,15 +180,13 @@ func (syncer *managedClusterLabelsBundleSyncer) updateManagedClusterAsync(labels
 		}
 
 		syncer.log.Info("managed cluster updated", "name", labelsSpec.ClusterName)
-		syncer.managedClusterMarkUpdated(labelsSpec, lastProcessedTimestampInMap)
+		syncer.managedClusterMarkUpdated(labelsSpec, lastProcessedTimestampPtr)
 	}))
 }
 
 func (syncer *managedClusterLabelsBundleSyncer) managedClusterMarkUpdated(labelsSpec *spec.ManagedClusterLabelsSpec,
-	lastProcessedTimestampInMap *time.Time) {
-	*lastProcessedTimestampInMap = labelsSpec.UpdateTimestamp
-
-	syncer.bundleProcessingWaitingGroup.Done()
+	lastProcessedTimestampPtr *time.Time) {
+	*lastProcessedTimestampPtr = labelsSpec.UpdateTimestamp
 }
 
 func (syncer *managedClusterLabelsBundleSyncer) getManagedClusterLastProcessedTimestamp(name string) *time.Time {
@@ -225,7 +221,7 @@ func (syncer *managedClusterLabelsBundleSyncer) updateManagedFieldEntry(managedC
 		Manager:    hohFieldManager,
 		Operation:  v1.ManagedFieldsOperationUpdate,
 		APIVersion: managedCluster.APIVersion,
-		Time:       &v1.Time{Time: managedClusterLabelsSpec.UpdateTimestamp},
+		Time:       &v1.Time{Time: time.Now()},
 		FieldsV1:   &v1.FieldsV1{Raw: metadataFieldRaw},
 	}
 	// get entry index
@@ -240,9 +236,9 @@ func (syncer *managedClusterLabelsBundleSyncer) updateManagedFieldEntry(managedC
 	// replace
 	if index >= 0 {
 		managedCluster.ManagedFields[index] = managedFieldEntry
+	} else { // otherwise, insert
+		managedCluster.ManagedFields = append(managedCluster.ManagedFields, managedFieldEntry)
 	}
-	// otherwise, insert
-	managedCluster.ManagedFields = append(managedCluster.ManagedFields, managedFieldEntry)
 
 	return nil
 }
