@@ -6,7 +6,7 @@ type Transport interface {
 	Start()
 	// Stop stops the transport.
 	Stop()
-	// Register function registers a bundle ID to a CustomBundleRegistration. None-registered bundles are assumed to be
-	// of type GenericBundle, and are handled by the generic-bundle-syncer.
+	// Register registers a bundle ID to a CustomBundleRegistration. None-registered bundles are assumed to be
+	// of type GenericBundle, and are handled by the GenericBundleSyncer.
 	Register(msgID string, customBundleRegistration *CustomBundleRegistration)
 }
