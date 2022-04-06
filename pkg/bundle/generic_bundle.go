@@ -9,7 +9,7 @@ func NewGenericBundle() *GenericBundle {
 	return &GenericBundle{}
 }
 
-// GenericBundle bundle received from transport containing received Objects/DeletedObjects.
+// GenericBundle bundle received from transport containing Objects/DeletedObjects.
 type GenericBundle struct {
 	Objects        []*unstructured.Unstructured `json:"objects"`
 	DeletedObjects []*unstructured.Unstructured `json:"deletedObjects"`
