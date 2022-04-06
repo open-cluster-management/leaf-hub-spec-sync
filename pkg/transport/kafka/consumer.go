@@ -17,6 +17,7 @@ import (
 	"github.com/stolostron/hub-of-hubs-message-compression/compressors"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport/helpers"
 )
 
 const (
@@ -194,7 +195,7 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 		return
 	}
 
-	bundleRegistration, found := c.customBundleIDToRegistrationMap[transportMsg.ID]
+	customBundleRegistration, found := c.customBundleIDToRegistrationMap[transportMsg.ID]
 	if !found { // received generic bundle
 		if err := c.syncGenericBundle(transportMsg.Payload); err != nil {
 			c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
@@ -204,15 +205,10 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 		return
 	}
 
-	receivedBundle := bundleRegistration.CreateBundleFunc()
-	if err := json.Unmarshal(transportMsg.Payload, &receivedBundle); err != nil {
+	if err := helpers.SyncCustomBundle(customBundleRegistration, decompressedPayload); err != nil {
 		c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
 			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
-
-		return
 	}
-
-	bundleRegistration.BundleUpdatesChan <- receivedBundle
 }
 
 func (c *Consumer) syncGenericBundle(payload []byte) error {

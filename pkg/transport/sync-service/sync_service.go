@@ -18,6 +18,7 @@ import (
 	"github.com/stolostron/hub-of-hubs-message-compression/compressors"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport/helpers"
 )
 
 const (
@@ -166,13 +167,10 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 					return
 				}
 			} else {
-				receivedBundle := customBundleRegistration.CreateBundleFunc()
-				if err := json.Unmarshal(decompressedPayload, &receivedBundle); err != nil {
+				if err := helpers.SyncCustomBundle(customBundleRegistration, decompressedPayload); err != nil {
 					s.logError(err, "failed to parse bundle", objectMetaData)
 					return
 				}
-
-				customBundleRegistration.BundleUpdatesChan <- receivedBundle
 			}
 			// mark received
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
