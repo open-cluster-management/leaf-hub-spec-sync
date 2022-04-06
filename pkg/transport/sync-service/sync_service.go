@@ -16,6 +16,7 @@ import (
 	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	compressor "github.com/stolostron/hub-of-hubs-message-compression"
 	"github.com/stolostron/hub-of-hubs-message-compression/compressors"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
 )
 
@@ -26,7 +27,6 @@ const (
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
 	compressionHeaderTokensLength    = 2
 	defaultCompressionType           = compressor.NoOp
-	unregisteredObjectBundlesID      = "*"
 )
 
 var (
@@ -36,7 +36,7 @@ var (
 )
 
 // NewSyncService creates a new instance of SyncService.
-func NewSyncService(log logr.Logger, objectsBundleRegistration *transport.BundleRegistration) (*SyncService, error) {
+func NewSyncService(log logr.Logger, genericBundlesUpdatesChan chan *bundle.GenericBundle) (*SyncService, error) {
 	serverProtocol, host, port, pollingInterval, err := readEnvVars()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize sync service - %w", err)
@@ -49,18 +49,17 @@ func NewSyncService(log logr.Logger, objectsBundleRegistration *transport.Bundle
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	return &SyncService{
-		log:                 log,
-		client:              syncServiceClient,
-		compressorsMap:      make(map[compressor.CompressionType]compressors.Compressor),
-		pollingInterval:     pollingInterval,
-		bundlesMetaDataChan: make(chan *client.ObjectMetaData),
-		bundleIDToRegistrationMap: map[string]*transport.BundleRegistration{
-			unregisteredObjectBundlesID: objectsBundleRegistration,
-		},
-		commitMap:  make(map[string]*client.ObjectMetaData),
-		ctx:        ctx,
-		cancelFunc: cancelFunc,
-		lock:       sync.Mutex{},
+		log:                             log,
+		client:                          syncServiceClient,
+		compressorsMap:                  make(map[compressor.CompressionType]compressors.Compressor),
+		pollingInterval:                 pollingInterval,
+		bundlesMetaDataChan:             make(chan *client.ObjectMetaData),
+		genericBundlesUpdatesChan:       genericBundlesUpdatesChan,
+		customBundleIDToRegistrationMap: make(map[string]*transport.CustomBundleRegistration),
+		commitMap:                       make(map[string]*client.ObjectMetaData),
+		ctx:                             ctx,
+		cancelFunc:                      cancelFunc,
+		lock:                            sync.Mutex{},
 	}, nil
 }
 
@@ -102,12 +101,13 @@ func readEnvVars() (string, string, uint16, int, error) {
 
 // SyncService abstracts Sync Service client.
 type SyncService struct {
-	log                       logr.Logger
-	client                    *client.SyncServiceClient
-	compressorsMap            map[compressor.CompressionType]compressors.Compressor
-	pollingInterval           int
-	bundlesMetaDataChan       chan *client.ObjectMetaData
-	bundleIDToRegistrationMap map[string]*transport.BundleRegistration
+	log                             logr.Logger
+	client                          *client.SyncServiceClient
+	compressorsMap                  map[compressor.CompressionType]compressors.Compressor
+	pollingInterval                 int
+	bundlesMetaDataChan             chan *client.ObjectMetaData
+	genericBundlesUpdatesChan       chan *bundle.GenericBundle
+	customBundleIDToRegistrationMap map[string]*transport.CustomBundleRegistration
 	// map from object key to metadata. size limited at all times.
 	commitMap map[string]*client.ObjectMetaData
 
@@ -133,9 +133,9 @@ func (s *SyncService) Stop() {
 	})
 }
 
-// Register function registers a bundles channel to a msgID.
-func (s *SyncService) Register(msgID string, bundleRegistration *transport.BundleRegistration) {
-	s.bundleIDToRegistrationMap[msgID] = bundleRegistration
+// Register function registers a bundle ID to a CustomBundleRegistration.
+func (s *SyncService) Register(msgID string, customBundleRegistration *transport.CustomBundleRegistration) {
+	s.customBundleIDToRegistrationMap[msgID] = customBundleRegistration
 }
 
 func (s *SyncService) handleBundles(ctx context.Context) {
@@ -161,23 +161,38 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 				continue
 			}
 
-			bundleRegistration, found := s.bundleIDToRegistrationMap[objectMetaData.ObjectID]
-			if !found {
-				bundleRegistration = s.bundleIDToRegistrationMap[unregisteredObjectBundlesID]
+			customBundleRegistration, found := s.customBundleIDToRegistrationMap[objectMetaData.ObjectID]
+			if !found { // received generic bundle
+				if err := s.syncGenericBundle(decompressedPayload); err != nil {
+					s.logError(err, "failed to parse bundle", objectMetaData)
+					return
+				}
+			} else {
+				receivedBundle := customBundleRegistration.CreateBundleFunc()
+				if err := json.Unmarshal(decompressedPayload, &receivedBundle); err != nil {
+					s.logError(err, "failed to parse bundle", objectMetaData)
+					return
+				}
+
+				customBundleRegistration.BundleUpdatesChan <- receivedBundle
 			}
-
-			receivedBundle := bundleRegistration.CreateBundleFunc()
-			if err := json.Unmarshal(decompressedPayload, &receivedBundle); err != nil {
-				s.logError(err, "failed to parse bundle", objectMetaData)
-			}
-
-			bundleRegistration.BundleUpdatesChan <- receivedBundle
-
+			// mark received
 			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
 				s.logError(err, "failed to report object received to sync service", objectMetaData)
 			}
 		}
 	}
+}
+
+func (s *SyncService) syncGenericBundle(payload []byte) error {
+	receivedBundle := bundle.NewGenericBundle()
+	if err := json.Unmarshal(payload, &receivedBundle); err != nil {
+		return fmt.Errorf("failed to parse bundle - %w", err)
+	}
+
+	s.genericBundlesUpdatesChan <- receivedBundle
+
+	return nil
 }
 
 func (s *SyncService) logError(err error, errMsg string, objectMetaData *client.ObjectMetaData) {

@@ -16,8 +16,6 @@ import (
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport/kafka"
 	syncservice "github.com/stolostron/leaf-hub-spec-sync/pkg/transport/sync-service"
-
-	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -41,24 +39,18 @@ func printVersion(log logr.Logger) {
 }
 
 // function to choose transport type based on env var.
-func getTransport(transportType string, objectBundleUpdatesChan chan interface{}) (transport.Transport, error) {
-	objectBundlesRegistration := &transport.BundleRegistration{
-		CreateBundleFunc: func() interface{} {
-			return &bundle.UnstructuredBundle{}
-		},
-		BundleUpdatesChan: objectBundleUpdatesChan,
-	}
-
+func getTransport(transportType string,
+	genericBundleUpdatesChan chan *bundle.GenericBundle) (transport.Transport, error) {
 	switch transportType {
 	case kafkaTransportTypeName:
-		kafkaConsumer, err := kafka.NewConsumer(ctrl.Log.WithName("kafka"), objectBundlesRegistration)
+		kafkaConsumer, err := kafka.NewConsumer(ctrl.Log.WithName("kafka"), genericBundleUpdatesChan)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create kafka-consumer: %w", err)
 		}
 
 		return kafkaConsumer, nil
 	case syncServiceTransportTypeName:
-		syncService, err := syncservice.NewSyncService(ctrl.Log.WithName("sync-service"), objectBundlesRegistration)
+		syncService, err := syncservice.NewSyncService(ctrl.Log.WithName("sync-service"), genericBundleUpdatesChan)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create sync-service: %w", err)
 		}
@@ -94,16 +86,16 @@ func doMain() int {
 	}
 
 	// transport layer initialization
-	objectBundleUpdatesChan := make(chan interface{})
-	defer close(objectBundleUpdatesChan)
+	genericBundleUpdatesChan := make(chan *bundle.GenericBundle)
+	defer close(genericBundleUpdatesChan)
 
-	transportObj, err := getTransport(transportType, objectBundleUpdatesChan)
+	transportObj, err := getTransport(transportType, genericBundleUpdatesChan)
 	if err != nil {
 		log.Error(err, "transport initialization error")
 		return 1
 	}
 
-	mgr, err := createManager(leaderElectionNamespace, transportObj, objectBundleUpdatesChan)
+	mgr, err := createManager(leaderElectionNamespace, transportObj, genericBundleUpdatesChan)
 	if err != nil {
 		log.Error(err, "Failed to create manager")
 		return 1
@@ -123,7 +115,7 @@ func doMain() int {
 }
 
 func createManager(leaderElectionNamespace string, transportObj transport.Transport,
-	objectBundleUpdatesChan chan interface{}) (ctrl.Manager, error) {
+	objectBundleUpdatesChan chan *bundle.GenericBundle) (ctrl.Manager, error) {
 	options := ctrl.Options{
 		MetricsBindAddress:      fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 		LeaderElection:          true,
