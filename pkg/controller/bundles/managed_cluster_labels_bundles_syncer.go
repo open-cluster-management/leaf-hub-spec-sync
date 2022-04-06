@@ -27,10 +27,8 @@ const (
 )
 
 // AddManagedClusterLabelsBundleSyncer adds UnstructuredBundleSyncer to the manager.
-func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, transportObj transport.Transport,
-	k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
-	bundleUpdatesChan := make(chan interface{})
-
+func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan interface{},
+	transportObj transport.Transport, k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
 	if err := mgr.Add(&ManagedClusterLabelsBundleSyncer{
 		log:                          log,
 		bundleUpdatesChan:            bundleUpdatesChan,
@@ -40,7 +38,7 @@ func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, tran
 		bundleProcessingWaitingGroup: sync.WaitGroup{},
 		latestBundleLock:             sync.Mutex{},
 	}); err != nil {
-		close(bundleUpdatesChan)
+		close(bundleUpdatesChan) // custom syncers are responsible for their channels
 		return fmt.Errorf("failed to add unstructured bundles spec syncer - %w", err)
 	}
 

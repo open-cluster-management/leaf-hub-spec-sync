@@ -30,23 +30,34 @@ func AddToScheme(runtimeScheme *runtime.Scheme) error {
 }
 
 // AddSpecSyncer adds the controllers that get updates from transport layer and apply/delete CRs to the Manager.
-func AddSpecSyncer(mgr ctrl.Manager, transportObj transport.Transport) error {
+func AddSpecSyncer(mgr ctrl.Manager, transportObj transport.Transport,
+	objectsBundleUpdatesChan chan interface{}) error {
 	k8sWorkerPool, err := k8sworkerpool.AddK8sWorkerPool(ctrl.Log.WithName("k8s-workers-pool"), mgr)
 	if err != nil {
 		return fmt.Errorf("failed to add k8s workers pool to runtime manager: %w", err)
 	}
 
 	addControllerFunctions := []struct {
-		addControllerFunction func(logr.Logger, ctrl.Manager, transport.Transport, *k8sworkerpool.K8sWorkerPool) error
 		loggerName            string
+		bundleUpdatesChan     chan interface{}
+		addControllerFunction func(logr.Logger, ctrl.Manager, chan interface{}, transport.Transport,
+			*k8sworkerpool.K8sWorkerPool) error
 	}{
-		{bundles.AddUnstructuredBundleSyncer, "unstructured-bundle-syncer"},
-		{bundles.AddManagedClusterLabelsBundleSyncer, "managed-clusters-metadata-syncer"},
+		{
+			"unstructured-bundle-syncer",
+			objectsBundleUpdatesChan,
+			bundles.AddUnstructuredBundleSyncer,
+		},
+		{
+			"managed-clusters-metadata-syncer",
+			make(chan interface{}), // responsibility moves to the syncer (should be closed there)
+			bundles.AddManagedClusterLabelsBundleSyncer,
+		},
 	}
 
 	for _, controllerInitInfo := range addControllerFunctions {
 		if err = controllerInitInfo.addControllerFunction(ctrl.Log.WithName(controllerInitInfo.loggerName), mgr,
-			transportObj, k8sWorkerPool); err != nil {
+			controllerInitInfo.bundleUpdatesChan, transportObj, k8sWorkerPool); err != nil {
 			return fmt.Errorf("failed to add bundles spec syncer to runtime manager: %w", err)
 		}
 	}

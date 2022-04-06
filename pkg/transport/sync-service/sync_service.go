@@ -26,17 +26,17 @@ const (
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
 	compressionHeaderTokensLength    = 2
 	defaultCompressionType           = compressor.NoOp
+	unregisteredObjectBundlesID      = "*"
 )
 
 var (
-	errEnvVarNotFound                = errors.New("environment variable not found")
-	errReceivedUnsupportedBundleType = errors.New("received unsupported message type")
-	errMissingCompressionType        = errors.New("compression type is missing from message description")
-	errSyncServiceReadFailed         = errors.New("sync service error")
+	errEnvVarNotFound         = errors.New("environment variable not found")
+	errMissingCompressionType = errors.New("compression type is missing from message description")
+	errSyncServiceReadFailed  = errors.New("sync service error")
 )
 
 // NewSyncService creates a new instance of SyncService.
-func NewSyncService(log logr.Logger) (*SyncService, error) {
+func NewSyncService(log logr.Logger, objectsBundleRegistration *transport.BundleRegistration) (*SyncService, error) {
 	serverProtocol, host, port, pollingInterval, err := readEnvVars()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize sync service - %w", err)
@@ -49,16 +49,18 @@ func NewSyncService(log logr.Logger) (*SyncService, error) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	return &SyncService{
-		log:                       log,
-		client:                    syncServiceClient,
-		compressorsMap:            make(map[compressor.CompressionType]compressors.Compressor),
-		pollingInterval:           pollingInterval,
-		bundlesMetaDataChan:       make(chan *client.ObjectMetaData),
-		bundleIDToRegistrationMap: make(map[string]*transport.BundleRegistration),
-		commitMap:                 make(map[string]*client.ObjectMetaData),
-		ctx:                       ctx,
-		cancelFunc:                cancelFunc,
-		lock:                      sync.Mutex{},
+		log:                 log,
+		client:              syncServiceClient,
+		compressorsMap:      make(map[compressor.CompressionType]compressors.Compressor),
+		pollingInterval:     pollingInterval,
+		bundlesMetaDataChan: make(chan *client.ObjectMetaData),
+		bundleIDToRegistrationMap: map[string]*transport.BundleRegistration{
+			unregisteredObjectBundlesID: objectsBundleRegistration,
+		},
+		commitMap:  make(map[string]*client.ObjectMetaData),
+		ctx:        ctx,
+		cancelFunc: cancelFunc,
+		lock:       sync.Mutex{},
 	}, nil
 }
 
@@ -161,8 +163,7 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 
 			bundleRegistration, found := s.bundleIDToRegistrationMap[objectMetaData.ObjectID]
 			if !found {
-				s.logError(errReceivedUnsupportedBundleType, "dropped bundle", objectMetaData)
-				continue
+				bundleRegistration = s.bundleIDToRegistrationMap[unregisteredObjectBundlesID]
 			}
 
 			receivedBundle := bundleRegistration.CreateBundleFunc()

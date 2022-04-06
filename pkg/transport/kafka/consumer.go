@@ -24,15 +24,13 @@ const (
 	envVarKafkaSSLCA            = "KAFKA_SSL_CA"
 	envVarKafkaTopic            = "KAFKA_TOPIC"
 	defaultCompressionType      = compressor.NoOp
+	unregisteredObjectBundlesID = "*"
 )
 
-var (
-	errReceivedUnsupportedBundleType = errors.New("received unsupported message type")
-	errEnvVarNotFound                = errors.New("environment variable not found")
-)
+var errEnvVarNotFound = errors.New("environment variable not found")
 
 // NewConsumer creates a new instance of Consumer.
-func NewConsumer(log logr.Logger) (*Consumer, error) {
+func NewConsumer(log logr.Logger, objectsBundleRegistration *transport.BundleRegistration) (*Consumer, error) {
 	leafHubName, kafkaConfigMap, topic, err := readEnvVars()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
@@ -56,13 +54,15 @@ func NewConsumer(log logr.Logger) (*Consumer, error) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	return &Consumer{
-		log:                          log,
-		leafHubName:                  leafHubName,
-		kafkaConsumer:                kafkaConsumer,
-		compressorsMap:               make(map[compressor.CompressionType]compressors.Compressor),
-		topic:                        topic,
-		msgChan:                      msgChan,
-		bundleIDToRegistrationMap:    make(map[string]*transport.BundleRegistration),
+		log:            log,
+		leafHubName:    leafHubName,
+		kafkaConsumer:  kafkaConsumer,
+		compressorsMap: make(map[compressor.CompressionType]compressors.Compressor),
+		topic:          topic,
+		msgChan:        msgChan,
+		bundleIDToRegistrationMap: map[string]*transport.BundleRegistration{
+			unregisteredObjectBundlesID: objectsBundleRegistration,
+		},
 		partitionToOffsetToCommitMap: make(map[int32]kafka.Offset),
 		ctx:                          ctx,
 		cancelFunc:                   cancelFunc,
@@ -192,15 +192,12 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 		return
 	}
 
-	bundlesRegistration, found := c.bundleIDToRegistrationMap[transportMsg.ID]
+	bundleRegistration, found := c.bundleIDToRegistrationMap[transportMsg.ID]
 	if !found {
-		c.log.Error(errReceivedUnsupportedBundleType, "skipped received message", "MessageID", transportMsg.ID,
-			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
-
-		return
+		bundleRegistration = c.bundleIDToRegistrationMap[unregisteredObjectBundlesID]
 	}
 
-	receivedBundle := bundlesRegistration.CreateBundleFunc()
+	receivedBundle := bundleRegistration.CreateBundleFunc()
 	if err := json.Unmarshal(transportMsg.Payload, &receivedBundle); err != nil {
 		c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
 			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
@@ -208,7 +205,7 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 		return
 	}
 
-	bundlesRegistration.BundleUpdatesChan <- receivedBundle
+	bundleRegistration.BundleUpdatesChan <- receivedBundle
 }
 
 func (c *Consumer) logError(err error, errMessage string, msg *kafka.Message) {

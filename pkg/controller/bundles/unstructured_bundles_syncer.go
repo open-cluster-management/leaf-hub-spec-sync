@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/helpers"
 	k8sworkerpool "github.com/stolostron/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
@@ -30,10 +29,8 @@ var (
 )
 
 // AddUnstructuredBundleSyncer adds UnstructuredBundleSyncer to the manager.
-func AddUnstructuredBundleSyncer(log logr.Logger, mgr ctrl.Manager, transportObj transport.Transport,
-	k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
-	bundleUpdatesChan := make(chan interface{})
-
+func AddUnstructuredBundleSyncer(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan interface{},
+	_ transport.Transport, k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
 	enforceHohRbac, err := readEnvVars()
 	if err != nil {
 		return fmt.Errorf("failed to initialize bundles spec syncer - %w", err)
@@ -46,30 +43,7 @@ func AddUnstructuredBundleSyncer(log logr.Logger, mgr ctrl.Manager, transportObj
 		bundleProcessingWaitingGroup: sync.WaitGroup{},
 		enforceHohRbac:               enforceHohRbac,
 	}); err != nil {
-		close(bundleUpdatesChan)
 		return fmt.Errorf("failed to add unstructured bundles spec syncer - %w", err)
-	}
-
-	unstructuredSpecBundlesKeys := []string{
-		datatypes.Config,
-		datatypes.PoliciesMsgKey,
-		datatypes.PlacementRulesMsgKey,
-		datatypes.PlacementBindingsMsgKey,
-		datatypes.ApplicationsMsgKey,
-		datatypes.ChannelsMsgKey,
-		datatypes.SubscriptionsMsgKey,
-		datatypes.PlacementsMsgKey,
-		datatypes.ManagedClusterSetsMsgKey,
-		datatypes.ManagedClusterSetBindingsMsgKey,
-	}
-
-	for _, unstructuredSpecBundleKey := range unstructuredSpecBundlesKeys {
-		transportObj.Register(unstructuredSpecBundleKey, &transport.BundleRegistration{
-			CreateBundleFunc: func() interface{} {
-				return &bundle.UnstructuredBundle{}
-			},
-			BundleUpdatesChan: bundleUpdatesChan,
-		})
 	}
 
 	return nil
