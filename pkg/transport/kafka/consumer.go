@@ -10,7 +10,6 @@ import (
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/go-logr/logr"
-	datatypes "github.com/stolostron/hub-of-hubs-data-types"
 	"github.com/stolostron/hub-of-hubs-kafka-transport/headers"
 	kafkaclient "github.com/stolostron/hub-of-hubs-kafka-transport/kafka-client"
 	kafkaconsumer "github.com/stolostron/hub-of-hubs-kafka-transport/kafka-client/kafka-consumer"
@@ -18,6 +17,7 @@ import (
 	"github.com/stolostron/hub-of-hubs-message-compression/compressors"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/bundle"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
+	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport/helpers"
 )
 
 const (
@@ -25,17 +25,16 @@ const (
 	envVarKafkaBootstrapServers = "KAFKA_BOOTSTRAP_SERVERS"
 	envVarKafkaSSLCA            = "KAFKA_SSL_CA"
 	envVarKafkaTopic            = "KAFKA_TOPIC"
-	defaultCompressionType      = compressor.NoOp
 )
 
 var (
-	errReceivedUnsupportedBundleType = errors.New("received unsupported message type")
-	errEnvVarNotFound                = errors.New("environment variable not found")
+	errEnvVarNotFound         = errors.New("environment variable not found")
+	errMissingCompressionType = errors.New("compression type is missing from message description")
 )
 
 // NewConsumer creates a new instance of Consumer.
-func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.Bundle) (*Consumer, error) {
-	kafkaConfigMap, topic, err := readEnvVars()
+func NewConsumer(log logr.Logger, genericBundlesUpdatesChan chan *bundle.GenericBundle) (*Consumer, error) {
+	leafHubName, kafkaConfigMap, topic, err := readEnvVars()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
@@ -58,39 +57,41 @@ func NewConsumer(log logr.Logger, bundleUpdatesChan chan *bundle.Bundle) (*Consu
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	return &Consumer{
-		log:                          log,
-		kafkaConsumer:                kafkaConsumer,
-		compressorsMap:               make(map[compressor.CompressionType]compressors.Compressor),
-		topic:                        topic,
-		msgChan:                      msgChan,
-		bundlesUpdatesChan:           bundleUpdatesChan,
-		partitionToOffsetToCommitMap: make(map[int32]kafka.Offset),
-		ctx:                          ctx,
-		cancelFunc:                   cancelFunc,
-		lock:                         sync.Mutex{},
+		log:                             log,
+		leafHubName:                     leafHubName,
+		kafkaConsumer:                   kafkaConsumer,
+		compressorsMap:                  make(map[compressor.CompressionType]compressors.Compressor),
+		topic:                           topic,
+		msgChan:                         msgChan,
+		genericBundlesUpdatesChan:       genericBundlesUpdatesChan,
+		customBundleIDToRegistrationMap: make(map[string]*transport.CustomBundleRegistration),
+		partitionToOffsetToCommitMap:    make(map[int32]kafka.Offset),
+		ctx:                             ctx,
+		cancelFunc:                      cancelFunc,
+		lock:                            sync.Mutex{},
 	}, nil
 }
 
-func readEnvVars() (*kafka.ConfigMap, string, error) {
-	consumerID, found := os.LookupEnv(envVarLeafHubID)
+func readEnvVars() (string, *kafka.ConfigMap, string, error) {
+	leafHubName, found := os.LookupEnv(envVarLeafHubID)
 	if !found {
-		return nil, "", fmt.Errorf("%w: %s", errEnvVarNotFound, envVarLeafHubID)
+		return "", nil, "", fmt.Errorf("%w: %s", errEnvVarNotFound, envVarLeafHubID)
 	}
 
 	bootstrapServers, found := os.LookupEnv(envVarKafkaBootstrapServers)
 	if !found {
-		return nil, "", fmt.Errorf("%w: %s", errEnvVarNotFound, envVarKafkaBootstrapServers)
+		return "", nil, "", fmt.Errorf("%w: %s", errEnvVarNotFound, envVarKafkaBootstrapServers)
 	}
 
 	topic, found := os.LookupEnv(envVarKafkaTopic)
 	if !found {
-		return nil, "", fmt.Errorf("%w: %s", errEnvVarNotFound, envVarKafkaTopic)
+		return "", nil, "", fmt.Errorf("%w: %s", errEnvVarNotFound, envVarKafkaTopic)
 	}
 
 	kafkaConfigMap := &kafka.ConfigMap{
 		"bootstrap.servers":       bootstrapServers,
-		"client.id":               consumerID,
-		"group.id":                consumerID,
+		"client.id":               leafHubName,
+		"group.id":                leafHubName,
 		"auto.offset.reset":       "earliest",
 		"enable.auto.commit":      "false",
 		"socket.keepalive.enable": "true",
@@ -100,30 +101,32 @@ func readEnvVars() (*kafka.ConfigMap, string, error) {
 	if sslBase64EncodedCertificate, found := os.LookupEnv(envVarKafkaSSLCA); found {
 		certFileLocation, err := kafkaclient.SetCertificate(&sslBase64EncodedCertificate)
 		if err != nil {
-			return nil, "", fmt.Errorf("failed to configure kafka-consumer - %w", err)
+			return "", nil, "", fmt.Errorf("failed to configure kafka-consumer - %w", err)
 		}
 
 		if err = kafkaConfigMap.SetKey("security.protocol", "ssl"); err != nil {
-			return nil, "", fmt.Errorf("failed to configure kafka-consumer - %w", err)
+			return "", nil, "", fmt.Errorf("failed to configure kafka-consumer - %w", err)
 		}
 
 		if err = kafkaConfigMap.SetKey("ssl.ca.location", certFileLocation); err != nil {
-			return nil, "", fmt.Errorf("failed to configure kafka-consumer - %w", err)
+			return "", nil, "", fmt.Errorf("failed to configure kafka-consumer - %w", err)
 		}
 	}
 
-	return kafkaConfigMap, topic, nil
+	return leafHubName, kafkaConfigMap, topic, nil
 }
 
 // Consumer abstracts hub-of-hubs-kafka-transport kafka-consumer's generic usage.
 type Consumer struct {
 	log            logr.Logger
+	leafHubName    string
 	kafkaConsumer  *kafkaconsumer.KafkaConsumer
 	compressorsMap map[compressor.CompressionType]compressors.Compressor
 	topic          string
 
-	msgChan            chan *kafka.Message
-	bundlesUpdatesChan chan *bundle.Bundle
+	msgChan                         chan *kafka.Message
+	genericBundlesUpdatesChan       chan *bundle.GenericBundle
+	customBundleIDToRegistrationMap map[string]*transport.CustomBundleRegistration
 
 	partitionToOffsetToCommitMap map[int32]kafka.Offset // size limited at all times (low)
 
@@ -150,6 +153,11 @@ func (c *Consumer) Stop() {
 	})
 }
 
+// Register function registers a bundle ID to a CustomBundleRegistration.
+func (c *Consumer) Register(msgID string, customBundleRegistration *transport.CustomBundleRegistration) {
+	c.customBundleIDToRegistrationMap[msgID] = customBundleRegistration
+}
+
 func (c *Consumer) handleKafkaMessages(ctx context.Context) {
 	for {
 		select {
@@ -163,13 +171,19 @@ func (c *Consumer) handleKafkaMessages(ctx context.Context) {
 }
 
 func (c *Consumer) processMessage(msg *kafka.Message) {
-	compressionType := defaultCompressionType
+	if msgDestinationLeafHubBytes, found := c.lookupHeaderValue(msg, headers.DestinationHub); found {
+		if string(msgDestinationLeafHubBytes) != c.leafHubName {
+			return // if destination is explicitly specified and does not match, drop bundle
+		}
+	} // if header is not found then assume broadcast
 
-	if compressionTypeBytes, found := c.lookupHeaderValue(msg, headers.CompressionType); found {
-		compressionType = compressor.CompressionType(compressionTypeBytes)
+	compressionTypeBytes, found := c.lookupHeaderValue(msg, headers.CompressionType)
+	if !found {
+		c.logError(errMissingCompressionType, "failed to read bundle", msg)
+		return
 	}
 
-	decompressedPayload, err := c.decompressPayload(msg.Value, compressionType)
+	decompressedPayload, err := c.decompressPayload(msg.Value, compressor.CompressionType(compressionTypeBytes))
 	if err != nil {
 		c.logError(err, "failed to decompress bundle bytes", msg)
 		return
@@ -181,23 +195,31 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 		return
 	}
 
-	switch transportMsg.MsgType {
-	case datatypes.Config:
-		fallthrough // same behavior as SpecBundle
-	case datatypes.SpecBundle:
-		receivedBundle := bundle.NewBundle()
-		if err := json.Unmarshal(transportMsg.Payload, receivedBundle); err != nil {
+	customBundleRegistration, found := c.customBundleIDToRegistrationMap[transportMsg.ID]
+	if !found { // received generic bundle
+		if err := c.syncGenericBundle(transportMsg.Payload); err != nil {
 			c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
 				"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
-
-			return
 		}
 
-		c.bundlesUpdatesChan <- receivedBundle
-	default:
-		c.log.Error(errReceivedUnsupportedBundleType, "skipped received message", "MessageID", transportMsg.ID,
+		return
+	}
+
+	if err := helpers.SyncCustomBundle(customBundleRegistration, decompressedPayload); err != nil {
+		c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
 			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
 	}
+}
+
+func (c *Consumer) syncGenericBundle(payload []byte) error {
+	receivedBundle := bundle.NewGenericBundle()
+	if err := json.Unmarshal(payload, receivedBundle); err != nil {
+		return fmt.Errorf("failed to parse bundle - %w", err)
+	}
+
+	c.genericBundlesUpdatesChan <- receivedBundle
+
+	return nil
 }
 
 func (c *Consumer) logError(err error, errMessage string, msg *kafka.Message) {

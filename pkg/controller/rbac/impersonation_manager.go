@@ -49,8 +49,13 @@ func (manager *ImpersonationManager) Impersonate(userIdentity string, userGroups
 }
 
 // GetUserIdentity returns the user identity in the obj or NoIdentity in case it can't be found on the object.
-func (manager *ImpersonationManager) GetUserIdentity(obj *unstructured.Unstructured) (string, error) {
-	annotations := obj.GetAnnotations()
+func (manager *ImpersonationManager) GetUserIdentity(obj interface{}) (string, error) {
+	unstructuredObj, ok := obj.(*unstructured.Unstructured)
+	if !ok {
+		return NoIdentity, nil // a custom object
+	}
+
+	annotations := unstructuredObj.GetAnnotations()
 	if annotations == nil { // there are no annotations defined, therefore user identity is not defined.
 		return NoIdentity, nil
 	}
@@ -65,8 +70,13 @@ func (manager *ImpersonationManager) GetUserIdentity(obj *unstructured.Unstructu
 
 // GetUserGroups returns the base64 encoded user groups and the decoded user groups in the obj or nil in case it
 // can't be found on the object.
-func (manager *ImpersonationManager) GetUserGroups(obj *unstructured.Unstructured) (string, []string, error) {
-	annotations := obj.GetAnnotations()
+func (manager *ImpersonationManager) GetUserGroups(obj interface{}) (string, []string, error) {
+	unstructuredObj, ok := obj.(*unstructured.Unstructured)
+	if !ok {
+		return NoIdentity, nil, nil // a custom object
+	}
+
+	annotations := unstructuredObj.GetAnnotations()
 	if annotations == nil { // there are no annotations defined, therefore user groups are not defined.
 		return NoIdentity, nil, nil
 	}

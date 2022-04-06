@@ -27,22 +27,22 @@ var (
 	errEnvVarInvalid  = errors.New("environment variable has invalid value")
 )
 
-// AddBundleSpecSync adds BundleSpecSync to the manager.
-func AddBundleSpecSync(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan *bundle.Bundle,
+// AddGenericBundleSyncer adds genericBundleSyncer to the manager.
+func AddGenericBundleSyncer(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan *bundle.GenericBundle,
 	k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
 	enforceHohRbac, err := readEnvVars()
 	if err != nil {
 		return fmt.Errorf("failed to initialize bundles spec syncer - %w", err)
 	}
 
-	if err := mgr.Add(&BundleSpecSync{
+	if err := mgr.Add(&genericBundleSyncer{
 		log:                          log,
 		bundleUpdatesChan:            bundleUpdatesChan,
 		k8sWorkerPool:                k8sWorkerPool,
 		bundleProcessingWaitingGroup: sync.WaitGroup{},
 		enforceHohRbac:               enforceHohRbac,
 	}); err != nil {
-		return fmt.Errorf("failed to add bundles spec syncer - %w", err)
+		return fmt.Errorf("failed to add generic bundles spec syncer - %w", err)
 	}
 
 	return nil
@@ -62,17 +62,17 @@ func readEnvVars() (bool, error) {
 	return enforceHohRbac, nil
 }
 
-// BundleSpecSync syncs objects spec from received bundles.
-type BundleSpecSync struct {
+// genericBundleSyncer syncs objects spec from received bundles.
+type genericBundleSyncer struct {
 	log                          logr.Logger
-	bundleUpdatesChan            chan *bundle.Bundle
+	bundleUpdatesChan            chan *bundle.GenericBundle
 	k8sWorkerPool                *k8sworkerpool.K8sWorkerPool
 	bundleProcessingWaitingGroup sync.WaitGroup
 	enforceHohRbac               bool
 }
 
 // Start function starts bundles spec syncer.
-func (syncer *BundleSpecSync) Start(ctx context.Context) error {
+func (syncer *genericBundleSyncer) Start(ctx context.Context) error {
 	syncer.log.Info("started bundles syncer...")
 
 	go syncer.sync(ctx)
@@ -83,7 +83,7 @@ func (syncer *BundleSpecSync) Start(ctx context.Context) error {
 	return nil
 }
 
-func (syncer *BundleSpecSync) sync(ctx context.Context) {
+func (syncer *genericBundleSyncer) sync(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done(): // we have received a signal to stop
@@ -91,46 +91,57 @@ func (syncer *BundleSpecSync) sync(ctx context.Context) {
 
 		case receivedBundle := <-syncer.bundleUpdatesChan: // handle the bundle
 			syncer.bundleProcessingWaitingGroup.Add(len(receivedBundle.Objects) + len(receivedBundle.DeletedObjects))
-
 			// send k8s jobs to workers to update objects
-			for _, obj := range receivedBundle.Objects {
-				if !syncer.enforceHohRbac { // if rbac not enforced, use controller's identity.
-					obj = syncer.anonymize(obj) // anonymize removes the user identity from the obj if exists
-				}
-
-				syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(obj, func(ctx context.Context,
-					k8sClient client.Client, obj *unstructured.Unstructured) {
-					defer syncer.bundleProcessingWaitingGroup.Done()
-					if !syncer.enforceHohRbac { // if rbac not enforced, create missing namespaces.
-						if err := helpers.CreateNamespaceIfNotExist(ctx, k8sClient, obj.GetNamespace()); err != nil {
-							syncer.log.Error(err, "failed to create namespace", "namespace",
-								obj.GetNamespace())
-							return
-						}
-					}
-
-					syncer.updateObject(ctx, k8sClient, obj)
-				}))
-			}
+			syncer.syncObjects(receivedBundle.Objects)
 			// send k8s jobs to workers to delete objects
-			for _, obj := range receivedBundle.DeletedObjects {
-				if !syncer.enforceHohRbac { // if rbac not enforced, use controller's identity.
-					obj = syncer.anonymize(obj) // anonymize removes the user identity from the obj if exists
-				}
-
-				syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(obj, func(ctx context.Context,
-					k8sClient client.Client, obj *unstructured.Unstructured) {
-					syncer.deleteObject(ctx, k8sClient, obj)
-					syncer.bundleProcessingWaitingGroup.Done()
-				}))
-			}
-			// ensure all updates and deletes have finished before handling failed objects and then read next bundle
+			syncer.syncDeletedObjects(receivedBundle.DeletedObjects)
+			// ensure all updates and deletes have finished before reading next bundle
 			syncer.bundleProcessingWaitingGroup.Wait()
 		}
 	}
 }
 
-func (syncer *BundleSpecSync) updateObject(ctx context.Context, k8sClient client.Client,
+func (syncer *genericBundleSyncer) syncObjects(objects []*unstructured.Unstructured) {
+	for _, obj := range objects {
+		if !syncer.enforceHohRbac { // if rbac not enforced, use controller's identity.
+			obj = syncer.anonymize(obj) // anonymize removes the user identity from the obj if exists
+		}
+
+		syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(obj, func(ctx context.Context,
+			k8sClient client.Client, obj interface{}) {
+			defer syncer.bundleProcessingWaitingGroup.Done()
+
+			unstructuredObject, _ := obj.(*unstructured.Unstructured)
+
+			if !syncer.enforceHohRbac { // if rbac not enforced, create missing namespaces.
+				if err := helpers.CreateNamespaceIfNotExist(ctx, k8sClient,
+					unstructuredObject.GetNamespace()); err != nil {
+					syncer.log.Error(err, "failed to create namespace",
+						"namespace", unstructuredObject.GetNamespace())
+					return
+				}
+			}
+
+			syncer.updateObject(ctx, k8sClient, unstructuredObject)
+		}))
+	}
+}
+
+func (syncer *genericBundleSyncer) syncDeletedObjects(deletedObjects []*unstructured.Unstructured) {
+	for _, obj := range deletedObjects {
+		if !syncer.enforceHohRbac { // if rbac not enforced, use controller's identity.
+			obj = syncer.anonymize(obj) // anonymize removes the user identity from the obj if exists
+		}
+
+		syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(obj, func(ctx context.Context,
+			k8sClient client.Client, obj interface{}) {
+			syncer.deleteObject(ctx, k8sClient, obj.(*unstructured.Unstructured))
+			syncer.bundleProcessingWaitingGroup.Done()
+		}))
+	}
+}
+
+func (syncer *genericBundleSyncer) updateObject(ctx context.Context, k8sClient client.Client,
 	obj *unstructured.Unstructured) {
 	if err := helpers.UpdateObject(ctx, k8sClient, obj); err != nil {
 		syncer.log.Error(err, "failed to update object", "name", obj.GetName(), "namespace",
@@ -142,7 +153,7 @@ func (syncer *BundleSpecSync) updateObject(ctx context.Context, k8sClient client
 		"kind", obj.GetKind())
 }
 
-func (syncer *BundleSpecSync) deleteObject(ctx context.Context, k8sClient client.Client,
+func (syncer *genericBundleSyncer) deleteObject(ctx context.Context, k8sClient client.Client,
 	obj *unstructured.Unstructured) {
 	if deleted, err := helpers.DeleteObject(ctx, k8sClient, obj); err != nil {
 		syncer.log.Error(err, "failed to delete object", "name", obj.GetName(), "namespace",
@@ -153,7 +164,7 @@ func (syncer *BundleSpecSync) deleteObject(ctx context.Context, k8sClient client
 	}
 }
 
-func (syncer *BundleSpecSync) anonymize(obj *unstructured.Unstructured) *unstructured.Unstructured {
+func (syncer *genericBundleSyncer) anonymize(obj *unstructured.Unstructured) *unstructured.Unstructured {
 	annotations := obj.GetAnnotations()
 	delete(annotations, rbac.UserIdentityAnnotation)
 	delete(annotations, rbac.UserGroupsAnnotation)

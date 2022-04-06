@@ -52,6 +52,10 @@ func DeleteObject(ctx context.Context, k8sClient client.Client, obj *unstructure
 
 // CreateNamespaceIfNotExist creates a namespace in case it doesn't exist.
 func CreateNamespaceIfNotExist(ctx context.Context, k8sClient client.Client, namespace string) error {
+	if namespace == "" {
+		return nil // objects with no namespace such as ManagedClusterSet
+	}
+
 	namespaceObj := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: namespace},
 	}
@@ -62,4 +66,14 @@ func CreateNamespaceIfNotExist(ctx context.Context, k8sClient client.Client, nam
 	}
 
 	return nil
+}
+
+// LabelsField presents a "f:labels" field subfield of metadataField.
+type LabelsField struct {
+	Labels map[string]struct{} `json:"f:labels"`
+}
+
+// MetadataField presents a "f:metadata" field subfield of v1.FieldsV1.
+type MetadataField struct {
+	LabelsField `json:"f:metadata"`
 }
