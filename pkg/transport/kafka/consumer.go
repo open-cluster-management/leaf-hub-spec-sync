@@ -194,7 +194,7 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 
 	bundleRegistration, found := c.customBundleIDToRegistrationMap[transportMsg.ID]
 	if !found { // received generic bundle
-		if err := c.syncGenericBundle(decompressedPayload); err != nil {
+		if err := c.syncGenericBundle(transportMsg.Payload); err != nil {
 			c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
 				"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
 		}
