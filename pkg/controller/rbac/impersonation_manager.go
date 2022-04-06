@@ -48,8 +48,7 @@ func (manager *ImpersonationManager) Impersonate(userIdentity string, userGroups
 	return userK8sClient, nil
 }
 
-// GetUserIdentity returns the user identity in the obj or NoUserIdentity in case the user-identity can't be found
-// in the object.
+// GetUserIdentity returns the user identity in the obj or NoIdentity in case the user-identity can't be found on the object.
 func (manager *ImpersonationManager) GetUserIdentity(obj interface{}) (string, error) {
 	unstructuredObj, ok := obj.(*unstructured.Unstructured)
 	if !ok {
