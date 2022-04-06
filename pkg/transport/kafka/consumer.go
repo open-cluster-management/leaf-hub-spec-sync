@@ -24,10 +24,12 @@ const (
 	envVarKafkaBootstrapServers = "KAFKA_BOOTSTRAP_SERVERS"
 	envVarKafkaSSLCA            = "KAFKA_SSL_CA"
 	envVarKafkaTopic            = "KAFKA_TOPIC"
-	defaultCompressionType      = compressor.NoOp
 )
 
-var errEnvVarNotFound = errors.New("environment variable not found")
+var (
+	errEnvVarNotFound         = errors.New("environment variable not found")
+	errMissingCompressionType = errors.New("compression type is missing from message description")
+)
 
 // NewConsumer creates a new instance of Consumer.
 func NewConsumer(log logr.Logger, genericBundlesUpdatesChan chan *bundle.GenericBundle) (*Consumer, error) {
@@ -168,19 +170,19 @@ func (c *Consumer) handleKafkaMessages(ctx context.Context) {
 }
 
 func (c *Consumer) processMessage(msg *kafka.Message) {
-	compressionType := defaultCompressionType
-
 	if msgDestinationLeafHubBytes, found := c.lookupHeaderValue(msg, headers.DestinationHub); found {
 		if string(msgDestinationLeafHubBytes) != c.leafHubName {
 			return // if destination is explicitly specified and does not match, drop bundle
 		}
 	} // if header is not found then assume broadcast
 
-	if compressionTypeBytes, found := c.lookupHeaderValue(msg, headers.CompressionType); found {
-		compressionType = compressor.CompressionType(compressionTypeBytes)
+	compressionTypeBytes, found := c.lookupHeaderValue(msg, headers.CompressionType)
+	if !found {
+		c.logError(errMissingCompressionType, "failed to read bundle", msg)
+		return
 	}
 
-	decompressedPayload, err := c.decompressPayload(msg.Value, compressionType)
+	decompressedPayload, err := c.decompressPayload(msg.Value, compressor.CompressionType(compressionTypeBytes))
 	if err != nil {
 		c.logError(err, "failed to decompress bundle bytes", msg)
 		return

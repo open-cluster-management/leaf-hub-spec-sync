@@ -26,12 +26,12 @@ const (
 	envVarSyncServicePort            = "SYNC_SERVICE_PORT"
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
 	compressionHeaderTokensLength    = 2
-	defaultCompressionType           = compressor.NoOp
 )
 
 var (
 	errEnvVarNotFound         = errors.New("environment variable not found")
 	errMissingCompressionType = errors.New("compression type is missing from message description")
+	errInvalidCompressionType = errors.New("invalid compression header (Description)")
 	errSyncServiceReadFailed  = errors.New("sync service error")
 )
 
@@ -153,9 +153,7 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 				continue
 			}
 			// sync-service does not need to check for leafHubName since we assume actual selective-distribution.
-			compressionType := s.getObjectCompressionType(objectMetaData)
-
-			decompressedPayload, err := s.decompressPayload(buf.Bytes(), compressionType)
+			decompressedPayload, err := s.decompressPayload(buf.Bytes(), objectMetaData)
 			if err != nil {
 				s.logError(err, "failed to decompress bundle bytes", objectMetaData)
 				continue
@@ -200,23 +198,12 @@ func (s *SyncService) logError(err error, errMsg string, objectMetaData *client.
 		"ObjectDescription", objectMetaData.Description, "Version", objectMetaData.Version)
 }
 
-func (s *SyncService) getObjectCompressionType(objectMetaData *client.ObjectMetaData) compressor.CompressionType {
-	if objectMetaData.Description != "" { // obj desc is Content-Encoding:type
-		compressionTokens := strings.Split(objectMetaData.Description, ":")
-		if len(compressionTokens) != compressionHeaderTokensLength {
-			s.logError(errMissingCompressionType, "invalid compression header (Description)",
-				objectMetaData)
-
-			return defaultCompressionType
-		}
-
-		return compressor.CompressionType(compressionTokens[1])
+func (s *SyncService) decompressPayload(payload []byte, objectMetaData *client.ObjectMetaData) ([]byte, error) {
+	compressionType, err := s.getObjectCompressionType(objectMetaData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decompress message: %w", err)
 	}
 
-	return defaultCompressionType
-}
-
-func (s *SyncService) decompressPayload(payload []byte, compressionType compressor.CompressionType) ([]byte, error) {
 	msgCompressor, found := s.compressorsMap[compressionType]
 	if !found {
 		newCompressor, err := compressor.NewCompressor(compressionType)
@@ -234,4 +221,18 @@ func (s *SyncService) decompressPayload(payload []byte, compressionType compress
 	}
 
 	return decompressedBytes, nil
+}
+
+func (s *SyncService) getObjectCompressionType(objectMetaData *client.ObjectMetaData,
+) (compressor.CompressionType, error) {
+	if objectMetaData.Description == "" { // obj desc is Content-Encoding:type
+		return "", errMissingCompressionType
+	}
+
+	compressionTokens := strings.Split(objectMetaData.Description, ":")
+	if len(compressionTokens) != compressionHeaderTokensLength {
+		return "", errInvalidCompressionType
+	}
+
+	return compressor.CompressionType(compressionTokens[1]), nil
 }
