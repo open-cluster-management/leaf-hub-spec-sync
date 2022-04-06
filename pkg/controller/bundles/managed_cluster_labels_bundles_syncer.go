@@ -26,12 +26,12 @@ const (
 	hohFieldManager       = "hoh-agent"
 )
 
-// AddManagedClusterLabelsBundleSyncer adds UnstructuredBundleSyncer to the manager.
+// AddManagedClusterLabelsBundleSyncer adds managedClusterLabelsBundleSyncer to the manager.
 func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, transportObj transport.Transport,
 	k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
 	bundleUpdatesChan := make(chan interface{})
 
-	if err := mgr.Add(&ManagedClusterLabelsBundleSyncer{
+	if err := mgr.Add(&managedClusterLabelsBundleSyncer{
 		log:                          log,
 		bundleUpdatesChan:            bundleUpdatesChan,
 		latestBundle:                 nil,
@@ -54,8 +54,8 @@ func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, tran
 	return nil
 }
 
-// ManagedClusterLabelsBundleSyncer syncs managed clusters metadata from received bundles.
-type ManagedClusterLabelsBundleSyncer struct {
+// managedClusterLabelsBundleSyncer syncs managed clusters metadata from received bundles.
+type managedClusterLabelsBundleSyncer struct {
 	log               logr.Logger
 	bundleUpdatesChan chan interface{}
 
@@ -68,7 +68,7 @@ type ManagedClusterLabelsBundleSyncer struct {
 }
 
 // Start function starts bundles spec syncer.
-func (syncer *ManagedClusterLabelsBundleSyncer) Start(ctx context.Context) error {
+func (syncer *managedClusterLabelsBundleSyncer) Start(ctx context.Context) error {
 	syncer.log.Info("started bundles syncer...")
 
 	go syncer.sync(ctx)
@@ -80,7 +80,7 @@ func (syncer *ManagedClusterLabelsBundleSyncer) Start(ctx context.Context) error
 	return nil
 }
 
-func (syncer *ManagedClusterLabelsBundleSyncer) sync(ctx context.Context) {
+func (syncer *managedClusterLabelsBundleSyncer) sync(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done(): // we have received a signal to stop
@@ -97,7 +97,7 @@ func (syncer *ManagedClusterLabelsBundleSyncer) sync(ctx context.Context) {
 	}
 }
 
-func (syncer *ManagedClusterLabelsBundleSyncer) bundleHandler(ctx context.Context) {
+func (syncer *managedClusterLabelsBundleSyncer) bundleHandler(ctx context.Context) {
 	ticker := time.NewTicker(periodicApplyInterval)
 
 	for {
@@ -115,14 +115,14 @@ func (syncer *ManagedClusterLabelsBundleSyncer) bundleHandler(ctx context.Contex
 	}
 }
 
-func (syncer *ManagedClusterLabelsBundleSyncer) setLatestBundle(newBundle *spec.ManagedClusterLabelsSpecBundle) {
+func (syncer *managedClusterLabelsBundleSyncer) setLatestBundle(newBundle *spec.ManagedClusterLabelsSpecBundle) {
 	syncer.latestBundleLock.Lock()
 	defer syncer.latestBundleLock.Unlock()
 
 	syncer.latestBundle = newBundle
 }
 
-func (syncer *ManagedClusterLabelsBundleSyncer) handleBundle() {
+func (syncer *managedClusterLabelsBundleSyncer) handleBundle() {
 	syncer.latestBundleLock.Lock()
 	defer syncer.latestBundleLock.Unlock()
 
@@ -138,7 +138,7 @@ func (syncer *ManagedClusterLabelsBundleSyncer) handleBundle() {
 	syncer.bundleProcessingWaitingGroup.Wait()
 }
 
-func (syncer *ManagedClusterLabelsBundleSyncer) updateManagedClusterAsync(labelsSpec *spec.ManagedClusterLabelsSpec,
+func (syncer *managedClusterLabelsBundleSyncer) updateManagedClusterAsync(labelsSpec *spec.ManagedClusterLabelsSpec,
 	lastProcessedTimestampInMap *time.Time) {
 	syncer.k8sWorkerPool.RunAsync(k8sworkerpool.NewK8sJob(labelsSpec, func(ctx context.Context,
 		k8sClient client.Client, obj interface{},
@@ -169,7 +169,7 @@ func (syncer *ManagedClusterLabelsBundleSyncer) updateManagedClusterAsync(labels
 			delete(managedCluster.Labels, labelKey)
 		}
 
-		if err := syncer.UpdateManagedFieldEntry(managedCluster, labelsSpec); err != nil {
+		if err := syncer.updateManagedFieldEntry(managedCluster, labelsSpec); err != nil {
 			syncer.log.Error(err, "failed to update managed cluster", "name", labelsSpec.Name)
 			return
 		}
@@ -186,14 +186,14 @@ func (syncer *ManagedClusterLabelsBundleSyncer) updateManagedClusterAsync(labels
 	}))
 }
 
-func (syncer *ManagedClusterLabelsBundleSyncer) managedClusterMarkUpdated(labelsSpec *spec.ManagedClusterLabelsSpec,
+func (syncer *managedClusterLabelsBundleSyncer) managedClusterMarkUpdated(labelsSpec *spec.ManagedClusterLabelsSpec,
 	lastProcessedTimestampInMap *time.Time) {
 	*lastProcessedTimestampInMap = labelsSpec.UpdateTimestamp
 
 	syncer.bundleProcessingWaitingGroup.Done()
 }
 
-func (syncer *ManagedClusterLabelsBundleSyncer) getManagedClusterLastProcessedTimestamp(name string) *time.Time {
+func (syncer *managedClusterLabelsBundleSyncer) getManagedClusterLastProcessedTimestamp(name string) *time.Time {
 	timestamp, found := syncer.managedClusterToTimestampMap[name]
 	if found {
 		return timestamp
@@ -205,8 +205,8 @@ func (syncer *ManagedClusterLabelsBundleSyncer) getManagedClusterLastProcessedTi
 	return timestamp
 }
 
-// UpdateManagedFieldEntry inserts/updates the hohFieldManager managed-field entry in a given managedCluster.
-func (syncer *ManagedClusterLabelsBundleSyncer) UpdateManagedFieldEntry(managedCluster *clusterv1.ManagedCluster,
+// updateManagedFieldEntry inserts/updates the hohFieldManager managed-field entry in a given managedCluster.
+func (syncer *managedClusterLabelsBundleSyncer) updateManagedFieldEntry(managedCluster *clusterv1.ManagedCluster,
 	managedClusterLabelsSpec *spec.ManagedClusterLabelsSpec) error {
 	// create label fields
 	labelFields := helpers.LabelsField{Labels: map[string]struct{}{}}
