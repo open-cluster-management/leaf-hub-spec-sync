@@ -117,7 +117,7 @@ func doMain() int {
 }
 
 func createManager(leaderElectionNamespace string, transportObj transport.Transport,
-	objectBundleUpdatesChan chan *bundle.GenericBundle) (ctrl.Manager, error) {
+	genericBundleUpdatesChan chan *bundle.GenericBundle) (ctrl.Manager, error) {
 	options := ctrl.Options{
 		MetricsBindAddress:      fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 		LeaderElection:          true,
@@ -134,7 +134,7 @@ func createManager(leaderElectionNamespace string, transportObj transport.Transp
 		return nil, fmt.Errorf("failed to add schemes: %w", err)
 	}
 
-	if err := controller.AddSpecSyncer(mgr, transportObj, objectBundleUpdatesChan); err != nil {
+	if err := controller.AddSpecSyncers(mgr, transportObj, genericBundleUpdatesChan); err != nil {
 		return nil, fmt.Errorf("failed to add spec syncer: %w", err)
 	}
 

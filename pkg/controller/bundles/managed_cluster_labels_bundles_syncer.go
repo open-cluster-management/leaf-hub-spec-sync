@@ -44,7 +44,7 @@ func AddManagedClusterLabelsBundleSyncer(log logr.Logger, mgr ctrl.Manager, tran
 		return fmt.Errorf("failed to add unstructured bundles spec syncer - %w", err)
 	}
 
-	transportObj.Register(datatypes.ManagedClustersMetadataMsgKey, &transport.CustomBundleRegistration{
+	transportObj.Register(datatypes.ManagedClustersLabelsMsgKey, &transport.CustomBundleRegistration{
 		CreateBundleFunc: func() interface{} {
 			return &spec.ManagedClusterLabelsSpecBundle{}
 		},
@@ -127,7 +127,7 @@ func (syncer *managedClusterLabelsBundleSyncer) handleBundle() {
 	defer syncer.latestBundleLock.Unlock()
 
 	for _, managedClusterLabelsSpec := range syncer.latestBundle.Objects {
-		lastProcessedTimestamp := syncer.getManagedClusterLastProcessedTimestamp(managedClusterLabelsSpec.Name)
+		lastProcessedTimestamp := syncer.getManagedClusterLastProcessedTimestamp(managedClusterLabelsSpec.ClusterName)
 		if managedClusterLabelsSpec.UpdateTimestamp.After(*lastProcessedTimestamp) { // handle (success) once
 			syncer.bundleProcessingWaitingGroup.Add(1)
 			syncer.updateManagedClusterAsync(managedClusterLabelsSpec, lastProcessedTimestamp)
@@ -145,15 +145,15 @@ func (syncer *managedClusterLabelsBundleSyncer) updateManagedClusterAsync(labels
 	) {
 		managedCluster := &clusterv1.ManagedCluster{}
 		if err := k8sClient.Get(ctx, client.ObjectKey{
-			Name:      labelsSpec.Name,
+			Name:      labelsSpec.ClusterName,
 			Namespace: defaultNamespace,
 		}, managedCluster); k8serrors.IsNotFound(err) {
-			syncer.log.Info("managed cluster ignored - not found", "name", labelsSpec.Name)
+			syncer.log.Info("managed cluster ignored - not found", "name", labelsSpec.ClusterName)
 			syncer.managedClusterMarkUpdated(labelsSpec, lastProcessedTimestampInMap) // if not found then irrelevant
 
 			return
 		} else if err != nil {
-			syncer.log.Error(err, "failed to get managed cluster", "name", labelsSpec.Name)
+			syncer.log.Error(err, "failed to get managed cluster", "name", labelsSpec.ClusterName)
 			syncer.bundleProcessingWaitingGroup.Done()
 
 			return
@@ -170,18 +170,18 @@ func (syncer *managedClusterLabelsBundleSyncer) updateManagedClusterAsync(labels
 		}
 
 		if err := syncer.updateManagedFieldEntry(managedCluster, labelsSpec); err != nil {
-			syncer.log.Error(err, "failed to update managed cluster", "name", labelsSpec.Name)
+			syncer.log.Error(err, "failed to update managed cluster", "name", labelsSpec.ClusterName)
 			return
 		}
 
 		// update CR with replace API: fails if CR was modified since client.get
 		if err := k8sClient.Update(ctx, managedCluster,
 			&client.UpdateOptions{FieldManager: hohFieldManager}); err != nil {
-			syncer.log.Error(err, "failed to update managed cluster", "name", labelsSpec.Name)
+			syncer.log.Error(err, "failed to update managed cluster", "name", labelsSpec.ClusterName)
 			return
 		}
 
-		syncer.log.Info("managed cluster updated", "name", labelsSpec.Name)
+		syncer.log.Info("managed cluster updated", "name", labelsSpec.ClusterName)
 		syncer.managedClusterMarkUpdated(labelsSpec, lastProcessedTimestampInMap)
 	}))
 }

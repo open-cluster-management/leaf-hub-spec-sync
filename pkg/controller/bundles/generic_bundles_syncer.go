@@ -13,7 +13,6 @@ import (
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/helpers"
 	k8sworkerpool "github.com/stolostron/leaf-hub-spec-sync/pkg/controller/k8s-worker-pool"
 	"github.com/stolostron/leaf-hub-spec-sync/pkg/controller/rbac"
-	"github.com/stolostron/leaf-hub-spec-sync/pkg/transport"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,7 +29,7 @@ var (
 
 // AddGenericBundleSyncer adds genericBundleSyncer to the manager.
 func AddGenericBundleSyncer(log logr.Logger, mgr ctrl.Manager, bundleUpdatesChan chan *bundle.GenericBundle,
-	_ transport.Transport, k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
+	k8sWorkerPool *k8sworkerpool.K8sWorkerPool) error {
 	enforceHohRbac, err := readEnvVars()
 	if err != nil {
 		return fmt.Errorf("failed to initialize bundles spec syncer - %w", err)
