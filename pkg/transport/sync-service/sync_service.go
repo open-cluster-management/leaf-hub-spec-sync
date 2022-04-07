@@ -27,12 +27,14 @@ const (
 	envVarSyncServicePort            = "SYNC_SERVICE_PORT"
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
 	compressionHeaderTokensLength    = 2
+	msgIDHeaderTokensLength          = 2
 )
 
 var (
 	errEnvVarNotFound         = errors.New("environment variable not found")
 	errMissingCompressionType = errors.New("compression type is missing from message description")
 	errInvalidCompressionType = errors.New("invalid compression header (Description)")
+	errMessageIDWrongFormat   = errors.New("message ID format is bad")
 	errSyncServiceReadFailed  = errors.New("sync service error")
 )
 
@@ -148,36 +150,48 @@ func (s *SyncService) handleBundles(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case objectMetaData := <-s.bundlesMetaDataChan:
-			var buf bytes.Buffer
-			if !s.client.FetchObjectData(objectMetaData, &buf) {
-				s.logError(errSyncServiceReadFailed, "failed to read bundle from sync service", objectMetaData)
-				continue
-			}
-			// sync-service does not need to check for leafHubName since we assume actual selective-distribution.
-			decompressedPayload, err := s.decompressPayload(buf.Bytes(), objectMetaData)
-			if err != nil {
-				s.logError(err, "failed to decompress bundle bytes", objectMetaData)
-				continue
-			}
-
-			customBundleRegistration, found := s.customBundleIDToRegistrationMap[objectMetaData.ObjectID]
-			if !found { // received generic bundle
-				if err := s.syncGenericBundle(decompressedPayload); err != nil {
-					s.logError(err, "failed to parse bundle", objectMetaData)
-					return
-				}
-			} else {
-				if err := helpers.SyncCustomBundle(customBundleRegistration, decompressedPayload); err != nil {
-					s.logError(err, "failed to parse bundle", objectMetaData)
-					return
-				}
-			}
-			// mark received
-			if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
-				s.logError(err, "failed to report object received to sync service", objectMetaData)
+			if err := s.handleBundle(objectMetaData); err != nil {
+				s.logError(err, "failed to handle bundle", objectMetaData)
 			}
 		}
 	}
+}
+
+func (s *SyncService) handleBundle(objectMetaData *client.ObjectMetaData) error {
+	var buf bytes.Buffer
+	if !s.client.FetchObjectData(objectMetaData, &buf) {
+		return errSyncServiceReadFailed
+	}
+	// sync-service does not need to check for leafHubName since we assume actual selective-distribution.
+	decompressedPayload, err := s.decompressPayload(buf.Bytes(), objectMetaData)
+	if err != nil {
+		return fmt.Errorf("failed to decompress bundle bytes - %w", err)
+	}
+
+	// get msgID
+	msgIDTokens := strings.Split(objectMetaData.ObjectID, ".") // object id is LH_ID.MSG_ID
+	if len(msgIDTokens) != msgIDHeaderTokensLength {
+		return fmt.Errorf("expecting ObjectID of format LH_ID.MSG_ID - %w", errMessageIDWrongFormat)
+	}
+
+	msgID := msgIDTokens[1]
+
+	customBundleRegistration, found := s.customBundleIDToRegistrationMap[msgID]
+	if !found { // received generic bundle
+		if err := s.syncGenericBundle(decompressedPayload); err != nil {
+			return fmt.Errorf("failed to parse bundle - %w", err)
+		}
+	} else {
+		if err := helpers.SyncCustomBundle(customBundleRegistration, decompressedPayload); err != nil {
+			return fmt.Errorf("failed to parse bundle - %w", err)
+		}
+	}
+	// mark received
+	if err := s.client.MarkObjectReceived(objectMetaData); err != nil {
+		return fmt.Errorf("failed to report object received to sync service - %w", err)
+	}
+
+	return nil
 }
 
 func (s *SyncService) syncGenericBundle(payload []byte) error {
