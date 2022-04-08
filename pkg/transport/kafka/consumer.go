@@ -205,7 +205,7 @@ func (c *Consumer) processMessage(msg *kafka.Message) {
 		return
 	}
 
-	if err := helpers.SyncCustomBundle(customBundleRegistration, decompressedPayload); err != nil {
+	if err := helpers.SyncCustomBundle(customBundleRegistration, transportMsg.Payload); err != nil {
 		c.log.Error(err, "failed to parse bundle", "MessageID", transportMsg.ID,
 			"MessageType", transportMsg.MsgType, "Version", transportMsg.Version)
 	}
