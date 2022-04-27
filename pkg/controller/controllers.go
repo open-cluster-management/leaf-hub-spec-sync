@@ -12,8 +12,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// AddToScheme adds Resources that have to be fetched to the Scheme (no need to add scheme of resources that are applied
-// as a part of generic bundles).
+// AddToScheme adds only resources that have to be fetched.
+// (no need to add scheme of resources that are applied as a part of generic bundles).
 func AddToScheme(s *runtime.Scheme) error {
 	if err := clustersv1.Install(s); err != nil {
 		return fmt.Errorf("failed to install scheme: %w", err)
@@ -22,7 +22,7 @@ func AddToScheme(s *runtime.Scheme) error {
 	return nil
 }
 
-// AddSpecSyncers adds the controllers that get updates from transport layer to the Manager.
+// AddSpecSyncers adds spec syncers to the Manager.
 func AddSpecSyncers(mgr ctrl.Manager, transportObj transport.Transport,
 	genericBundleUpdatesChan chan *bundle.GenericBundle) error {
 	k8sWorkerPool, err := k8sworkerpool.AddK8sWorkerPool(ctrl.Log.WithName("k8s-workers-pool"), mgr)
