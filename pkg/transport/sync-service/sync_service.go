@@ -26,6 +26,7 @@ const (
 	envVarSyncServiceHost            = "SYNC_SERVICE_HOST"
 	envVarSyncServicePort            = "SYNC_SERVICE_PORT"
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
+	broadcastDestinationID           = ""
 	compressionHeaderTokensLength    = 2
 	msgIDHeaderTokensLength          = 2
 )
@@ -168,22 +169,26 @@ func (s *SyncService) handleBundle(objectMetaData *client.ObjectMetaData) error 
 		return fmt.Errorf("failed to decompress bundle bytes - %w", err)
 	}
 
-	// get msgID
-	msgIDTokens := strings.Split(objectMetaData.ObjectID, ".") // object id is LH_ID.MSG_ID
-	if len(msgIDTokens) != msgIDHeaderTokensLength {
-		return fmt.Errorf("expecting ObjectID of format LH_ID.MSG_ID - %w", errMessageIDWrongFormat)
-	}
+	msgID := objectMetaData.ObjectID
 
-	msgID := msgIDTokens[1]
+	// if selective distribution was applied, ObjectID would be LH_ID.MSG_ID
+	if objectMetaData.DestID != broadcastDestinationID {
+		msgIDTokens := strings.Split(objectMetaData.ObjectID, ".")
+		if len(msgIDTokens) != msgIDHeaderTokensLength {
+			return fmt.Errorf("expecting ObjectID of format LH_ID.MSG_ID - %w", errMessageIDWrongFormat)
+		}
+
+		msgID = msgIDTokens[1]
+	}
 
 	customBundleRegistration, found := s.customBundleIDToRegistrationMap[msgID]
 	if !found { // received generic bundle
 		if err := s.syncGenericBundle(decompressedPayload); err != nil {
-			return fmt.Errorf("failed to parse bundle - %w", err)
+			return fmt.Errorf("failed to sync generic bundle - %w", err)
 		}
 	} else {
 		if err := helpers.SyncCustomBundle(customBundleRegistration, decompressedPayload); err != nil {
-			return fmt.Errorf("failed to parse bundle - %w", err)
+			return fmt.Errorf("failed to sync custom bundle - %w", err)
 		}
 	}
 	// mark received
