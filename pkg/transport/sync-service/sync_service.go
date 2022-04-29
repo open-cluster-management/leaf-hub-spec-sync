@@ -26,16 +26,13 @@ const (
 	envVarSyncServiceHost            = "SYNC_SERVICE_HOST"
 	envVarSyncServicePort            = "SYNC_SERVICE_PORT"
 	envVarSyncServicePollingInterval = "SYNC_SERVICE_POLLING_INTERVAL"
-	broadcastDestinationID           = ""
 	compressionHeaderTokensLength    = 2
-	msgIDHeaderTokensLength          = 2
 )
 
 var (
 	errEnvVarNotFound         = errors.New("environment variable not found")
 	errMissingCompressionType = errors.New("compression type is missing from message description")
 	errInvalidCompressionType = errors.New("invalid compression header (Description)")
-	errMessageIDWrongFormat   = errors.New("message ID format is bad")
 	errSyncServiceReadFailed  = errors.New("sync service error")
 )
 
@@ -171,14 +168,13 @@ func (s *SyncService) handleBundle(objectMetaData *client.ObjectMetaData) error 
 
 	msgID := objectMetaData.ObjectID
 
-	// if selective distribution was applied, ObjectID would be LH_ID.MSG_ID
-	if objectMetaData.DestID != broadcastDestinationID {
-		msgIDTokens := strings.Split(objectMetaData.ObjectID, ".")
-		if len(msgIDTokens) != msgIDHeaderTokensLength {
-			return fmt.Errorf("expecting ObjectID of format LH_ID.MSG_ID - %w", errMessageIDWrongFormat)
+	// if selective distribution was applied (both DestID and DestType must be set), ObjectID would be LH_ID.MSG_ID
+	if objectMetaData.DestID != "" && objectMetaData.DestType != "" {
+		// check if msgID contains "LH_ID" prefix
+		if len(msgID) >= len(objectMetaData.DestID) && // make sure length is legal
+			msgID[:len(objectMetaData.DestID)] == objectMetaData.DestID { // check if prefix found
+			msgID = msgID[len(objectMetaData.DestID)+1:] // trim "LH_ID."
 		}
-
-		msgID = msgIDTokens[1]
 	}
 
 	customBundleRegistration, found := s.customBundleIDToRegistrationMap[msgID]
