@@ -171,8 +171,7 @@ func (s *SyncService) handleBundle(objectMetaData *client.ObjectMetaData) error 
 	// if selective distribution was applied (both DestID and DestType must be set), ObjectID would be LH_ID.MSG_ID
 	if objectMetaData.DestID != "" && objectMetaData.DestType != "" {
 		// check if msgID contains "LH_ID" prefix
-		if len(msgID) >= len(objectMetaData.DestID) && // make sure length is legal
-			msgID[:len(objectMetaData.DestID)] == objectMetaData.DestID { // check if prefix found
+		if strings.HasPrefix(msgID, objectMetaData.DestID) { // check if prefix found
 			msgID = msgID[len(objectMetaData.DestID)+1:] // trim "LH_ID."
 		}
 	}
