@@ -166,15 +166,8 @@ func (s *SyncService) handleBundle(objectMetaData *client.ObjectMetaData) error 
 		return fmt.Errorf("failed to decompress bundle bytes - %w", err)
 	}
 
-	msgID := objectMetaData.ObjectID
-
-	// if selective distribution was applied (both DestID and DestType must be set), ObjectID would be LH_ID.MSG_ID
-	if objectMetaData.DestID != "" && objectMetaData.DestType != "" {
-		// check if msgID contains "LH_ID." prefix
-		if strings.HasPrefix(msgID, fmt.Sprintf("%s.", objectMetaData.DestID)) { // check if prefix found
-			msgID = msgID[len(objectMetaData.DestID)+1:] // trim "LH_ID."
-		}
-	}
+	// if selective distribution was applied msgID would contain "LH_ID." prefix
+	msgID := strings.TrimPrefix(objectMetaData.ObjectID, fmt.Sprintf("%s.", objectMetaData.DestID))
 
 	customBundleRegistration, found := s.customBundleIDToRegistrationMap[msgID]
 	if !found { // received generic bundle
